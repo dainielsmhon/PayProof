@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dark-bg text-white;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-dark-surface/60 backdrop-blur-md border border-white/10 rounded-lg shadow-lg;
+  }
+  
+  .glass-card {
+    @apply glass p-6 hover:border-white/20 transition-all duration-300;
+  }
+  
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors duration-200;
+  }
+  
+  .btn-secondary {
+    @apply bg-dark-card hover:bg-dark-card/80 text-white px-4 py-2 rounded-lg transition-colors duration-200 border border-white/10;
+  }
+  
+  .input-field {
+    @apply bg-dark-surface/80 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors;
+  }
+}
+
