@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Plus, Trash2, Shield, Loader2, Save, X, FileText, Upload, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, Shield, Loader2, Save, X, FileText, Upload, ExternalLink, Hash } from 'lucide-react';
 
 const Warranties = () => {
   const [warranties, setWarranties] = useState([]);
@@ -13,6 +13,7 @@ const Warranties = () => {
   const [storeName, setStoreName] = useState('');
   const [purchaseDate, setPurchaseDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
+  const [serialNumber, setSerialNumber] = useState(''); // שדה חדש
   const [receiptFile, setReceiptFile] = useState(null);
 
   useEffect(() => {
@@ -37,27 +38,27 @@ const Warranties = () => {
 
   const handleFileUpload = async (file) => {
     if (!file) return null;
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-    
-    console.log("Uploading file:", fileName);
-    const { error: uploadError } = await supabase.storage
-      .from('receipts')
-      .upload(fileName, file);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('receipts')
+        .upload(fileName, file);
 
-    if (uploadError) {
-      console.error("Upload Error detail:", uploadError);
-      throw uploadError;
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName);
+      return publicUrl;
+    } catch (error) {
+      console.error("❌ שגיאה בהעלאת קובץ:", error);
+      throw error;
     }
-
-    const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName);
-    return publicUrl;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSaving(true);
-    console.log("Starting save process...");
 
     try {
       let receiptUrl = null;
@@ -65,27 +66,28 @@ const Warranties = () => {
         receiptUrl = await handleFileUpload(receiptFile);
       }
 
-      const { data, error } = await supabase
+      const warrantyData = {
+        product_name: productName.trim(),
+        store: storeName.trim() || null,
+        purchase_date: purchaseDate || null,
+        expiry_date: expiryDate,
+        serial_number: serialNumber.trim() || null, // הוספת מספר סידורי
+        receipt_url: receiptUrl
+      };
+
+      const { error } = await supabase
         .from('warranties')
-        .insert([{
-          product_name: productName,
-          // שם העמודה בטבלה: store
-          store: storeName,
-          purchase_date: purchaseDate,
-          // שם העמודה בטבלה: expiry_date
-          expiry_date: expiryDate,
-          receipt_url: receiptUrl
-        }]);
+        .insert([warrantyData]);
 
       if (error) throw error;
-      console.log("Saved successfully!");
 
-      setProductName(''); setStoreName(''); setPurchaseDate(''); setExpiryDate('');
+      // איפוס טופס
+      setProductName(''); setStoreName(''); setPurchaseDate(''); setExpiryDate(''); setSerialNumber('');
       setReceiptFile(null); setShowForm(false);
       await fetchWarranties();
+      alert('✅ האחריות נשמרה בהצלחה!');
     } catch (error) {
-      console.error("Submit error:", error);
-      alert('שגיאה בשמירה: ' + (error.message || 'ודא שכל השדות תקינים'));
+      alert(`שגיאה בשמירה: ${error.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -93,6 +95,7 @@ const Warranties = () => {
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto text-right text-black" dir="rtl">
+      {/* Header */}
       <div className="flex justify-between items-center mb-10 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <div>
           <h1 className="text-3xl font-black text-blue-600 flex items-center gap-3">
@@ -111,25 +114,29 @@ const Warranties = () => {
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6 text-right">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-bold text-gray-700">שם המוצר *</label>
-              <input required type="text" value={productName} onChange={(e) => setProductName(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl outline-none text-black font-semibold focus:border-blue-500 bg-white" />
+              <input required type="text" value={productName} onChange={(e) => setProductName(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl outline-none focus:border-blue-500 bg-white" />
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-bold text-gray-700">חנות / ספק</label>
-              <input type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl outline-none text-black font-semibold focus:border-blue-500 bg-white" />
+              <input type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl outline-none focus:border-blue-500 bg-white" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-bold text-gray-700">מספר סידורי (S/N)</label>
+              <input type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl outline-none focus:border-blue-500 bg-white" placeholder="אופציונלי" />
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-bold text-gray-700">תאריך רכישה</label>
-              <input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl outline-none text-black font-semibold bg-white" />
+              <input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl outline-none focus:border-blue-500 bg-white" />
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-bold text-gray-700">תוקף אחריות *</label>
-              <input required type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl outline-none text-black font-semibold bg-white" />
+              <input required type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl outline-none focus:border-blue-500 bg-white" />
             </div>
-            <div className="flex flex-col gap-2 md:col-span-2">
-              <label className="text-sm font-bold text-gray-700">צירוף קבלה (PDF/תמונה)</label>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-bold text-gray-700">צירוף קבלה</label>
               <label className="w-full p-3 bg-blue-50 border-2 border-dashed border-blue-200 rounded-xl flex items-center justify-center gap-2 cursor-pointer">
                 <Upload size={20} className="text-blue-600" />
-                <span className="text-blue-700 font-bold">{receiptFile ? receiptFile.name : 'בחר קובץ'}</span>
+                <span className="text-blue-700 font-bold overflow-hidden text-ellipsis">{receiptFile ? receiptFile.name : 'בחר קובץ'}</span>
                 <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => setReceiptFile(e.target.files[0])} />
               </label>
             </div>
@@ -141,20 +148,14 @@ const Warranties = () => {
         </div>
       )}
 
+      {/* List */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-24 text-blue-600"><Loader2 className="animate-spin mb-4" size={48} /><p className="font-bold text-xl">טוען נתונים...</p></div>
+        <div className="flex flex-col items-center justify-center py-24 text-blue-600"><Loader2 className="animate-spin mb-4" size={48} /><p className="font-bold text-xl">טוען...</p></div>
       ) : (
         <div className="grid gap-4">
           {warranties.map((w) => {
             const isExpired = w.expiry_date ? new Date(w.expiry_date) < new Date() : false;
-            const formattedExpiry =
-              w.expiry_date
-                ? new Date(w.expiry_date).toLocaleDateString('he-IL', {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                  })
-                : '-';
+            const formattedExpiry = w.expiry_date ? new Date(w.expiry_date).toLocaleDateString('he-IL') : '-';
 
             return (
               <div key={w.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center group text-right">
@@ -165,18 +166,19 @@ const Warranties = () => {
                       {isExpired ? 'פג תוקף' : 'בתוקף'}
                     </span>
                   </div>
-                  <div className="text-gray-500 text-sm mt-1 flex gap-6 text-right">
+                  <div className="text-gray-500 text-sm mt-1 flex flex-wrap gap-x-6 gap-y-1 text-right">
                     <span>🏬 {w.store || 'כללי'}</span>
-                    <span className="font-bold">⏳ תוקף: {formattedExpiry}</span>
+                    <span className="font-bold text-blue-600">⏳ תוקף: {formattedExpiry}</span>
+                    {w.serial_number && <span className="flex items-center gap-1"><Hash size={14} /> {w.serial_number}</span>}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   {w.receipt_url && (
-                    <a href={w.receipt_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-blue-50 text-blue-600 px-4 py-2 rounded-xl font-bold hover:bg-blue-100 transition-colors">
+                    <a href={w.receipt_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-blue-50 text-blue-600 px-4 py-2 rounded-xl font-bold hover:bg-blue-100">
                       <FileText size={18} /> קבלה <ExternalLink size={14} />
                     </a>
                   )}
-                  <button onClick={async () => { if(window.confirm('למחוק?')) { await supabase.from('warranties').delete().eq('id', w.id); fetchWarranties(); } }} className="text-gray-300 hover:text-red-500 p-2 transition-colors">
+                  <button onClick={async () => { if(window.confirm('למחוק?')) { await supabase.from('warranties').delete().eq('id', w.id); fetchWarranties(); } }} className="text-gray-300 hover:text-red-500 p-2">
                     <Trash2 size={24} />
                   </button>
                 </div>
