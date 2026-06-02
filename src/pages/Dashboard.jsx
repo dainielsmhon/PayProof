@@ -1,10 +1,40 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../supabaseClient'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { getDaysRemaining, getStatusColor, formatDate } from '../utils/dateUtils'
 import { AlertCircle, TrendingUp, Bell, CreditCard } from 'lucide-react'
 
 const Dashboard = () => {
+  /* Refactor: LocalStorage for Subscriptions, Supabase for Warranties */
   const [subscriptions] = useLocalStorage('subscriptions', [])
-  const [warranties] = useLocalStorage('warranties', [])
+
+  // Replace LocalStorage warranties with Supabase state
+  const [warranties, setWarranties] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [userName, setUserName] = useState('')
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Fetch User Name (Proof of Profile creation)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('first_name')
+          .eq('id', user.id)
+          .single();
+        if (profile) setUserName(profile.first_name);
+
+        const { data } = await supabase
+          .from('warranties')
+          .select('*')
+          .eq('user_id', user.id); // Filter by user
+        setWarranties(data || []);
+      }
+      setLoading(false);
+    };
+    fetchDashboardData();
+  }, [])
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -21,11 +51,11 @@ const Dashboard = () => {
   }).length
 
   const expiredWarranties = warranties.filter(w => {
-    const days = getDaysRemaining(w.expiryDate)
+    const days = getDaysRemaining(w.expiry_date) // Note: Snake case from DB
     return days !== null && days < 0
   }).length
   const expiringSoonWarranties = warranties.filter(w => {
-    const days = getDaysRemaining(w.expiryDate)
+    const days = getDaysRemaining(w.expiry_date)
     return days !== null && days > 0 && days <= 30
   }).length
 
@@ -35,7 +65,9 @@ const Dashboard = () => {
   const warrantiesEndingSoon = warranties
     .map(w => ({
       ...w,
-      daysRemaining: getDaysRemaining(w.expiryDate)
+      daysRemaining: getDaysRemaining(w.expiry_date),
+      productName: w.product_name, // Map Snake Case DB to Component
+      category: w.category || 'כללי'
     }))
     .filter(w => w.daysRemaining !== null && w.daysRemaining <= 30)
     .sort((a, b) => a.daysRemaining - b.daysRemaining)
@@ -63,7 +95,7 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold mb-6">לוח בקרה</h1>
+      <h1 className="text-3xl font-bold mb-6">לוח בקרה {userName && <span className="text-blue-500">• שלום, {userName}</span>}</h1>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

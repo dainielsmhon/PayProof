@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { 
-  LayoutDashboard, 
-  CreditCard, 
-  Shield, 
-  FileText, 
-  Menu, 
-  X 
+import {
+  LayoutDashboard,
+  CreditCard,
+  Shield,
+  FileText,
+  Menu,
+  X,
+  Users
 } from 'lucide-react'
 
 const Layout = ({ children }) => {
@@ -25,15 +26,15 @@ const Layout = ({ children }) => {
     { path: '/subscriptions', icon: CreditCard, label: 'מנויים' },
     { path: '/warranties', icon: Shield, label: 'אחריות' },
     { path: '/receipts', icon: FileText, label: 'קבלות' },
+    { path: '/users', icon: Users, label: 'ניהול משתמשים' },
   ]
 
   return (
     <div className="flex h-screen overflow-hidden bg-dark-bg flex-row-reverse">
       {/* Sidebar */}
       <aside
-        className={`${
-          sidebarOpen ? 'w-64' : 'w-0'
-        } transition-all duration-300 overflow-hidden glass border-r border-white/10`}
+        className={`${sidebarOpen ? 'w-64' : 'w-0'
+          } transition-all duration-300 overflow-hidden glass border-r border-white/10`}
       >
         <div className="p-6">
           <div className="flex items-center justify-between mb-8">
@@ -53,11 +54,10 @@ const Layout = ({ children }) => {
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
-                    isActive
-                      ? 'bg-blue-600/30 text-blue-300 border-l-4 border-blue-500'
-                      : 'text-gray-300 hover:bg-dark-card/50 hover:text-white'
-                  }`}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${isActive
+                    ? 'bg-blue-600/30 text-blue-300 border-l-4 border-blue-500'
+                    : 'text-gray-300 hover:bg-dark-card/50 hover:text-white'
+                    }`}
                 >
                   <Icon size={20} />
                   <span>{item.label}</span>
