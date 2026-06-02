@@ -1,4 +1,5 @@
-# MyManager - מנהל מנויים ואחריות
+# PayProof
+ - מנהל מנויים ואחריות
 
 Personal Subscription & Warranty Manager application built with React, Vite, and Tailwind CSS.
 
