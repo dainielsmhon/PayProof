@@ -1,110 +1,161 @@
+// SUPABASE_READY: profiles, warranties
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { getDaysRemaining, getStatusColor, formatDate } from '../utils/dateUtils'
-import { AlertCircle, TrendingUp, Bell, CreditCard, Sparkles, Send, Loader2 } from 'lucide-react'
+import {
+  AlertCircle, TrendingUp, Bell, CreditCard, Sparkles,
+  Send, Loader2, Shield, FileText, ArrowLeft, ChevronLeft,
+  Sun, Moon, Coffee, Zap, RotateCcw
+} from 'lucide-react'
 import { askGeminiAgent } from '../lib/gemini'
 
-const Dashboard = () => {
-  /* Refactor: LocalStorage for Subscriptions, Supabase for Warranties */
-  const [subscriptions] = useLocalStorage('subscriptions', [])
+// Helper: greeting based on time
+const getGreeting = () => {
+  const h = new Date().getHours()
+  if (h < 5)  return { text: 'לילה טוב',   icon: Moon }
+  if (h < 12) return { text: 'בוקר טוב',   icon: Sun }
+  if (h < 17) return { text: 'צהריים טובים', icon: Coffee }
+  return          { text: 'ערב טוב',    icon: Moon }
+}
 
-  // Replace LocalStorage warranties with Supabase state
+// Stat Card Component
+const StatCard = ({ icon: Icon, label, value, sub, color, delay = 0 }) => (
+  <div
+    className="pp-glass p-5 flex flex-col gap-3 animate-slide-up relative overflow-hidden cursor-default"
+    style={{ animationDelay: `${delay}ms` }}
+  >
+    {/* Background glow */}
+    <div
+      className="absolute top-0 left-0 w-24 h-24 rounded-full blur-2xl opacity-20 pointer-events-none"
+      style={{ background: color, transform: 'translate(-30%, -30%)' }}
+      aria-hidden="true"
+    />
+    <div className="flex items-start justify-between relative z-10">
+      <div>
+        <p className="text-pp-text-secondary text-xs font-medium mb-1">{label}</p>
+        <p className="text-3xl font-display font-bold font-numeric" style={{ color }}>{value}</p>
+        {sub && <p className="text-pp-text-muted text-[11px] mt-1 font-medium">{sub}</p>}
+      </div>
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+        style={{ background: `${color}18`, border: `1px solid ${color}30` }}
+        aria-hidden="true"
+      >
+        <Icon size={18} style={{ color }} />
+      </div>
+    </div>
+  </div>
+)
+
+// Status badge helper
+const getStatusBadge = (daysRemaining) => {
+  if (daysRemaining === null) return null
+  if (daysRemaining < 0)   return <span className="pp-badge-danger">פג תוקף</span>
+  if (daysRemaining <= 7)  return <span className="pp-badge-danger">נותרו {daysRemaining} ימים</span>
+  if (daysRemaining <= 30) return <span className="pp-badge-warning">נותרו {daysRemaining} ימים</span>
+  return <span className="pp-badge-success">בתוקף</span>
+}
+
+// Upcoming Item Row
+const UpcomingRow = ({ title, sub, daysRemaining, icon: Icon, iconColor }) => (
+  <div className="flex items-center justify-between py-3 border-b border-white/5 last:border-0 gap-3 group">
+    <div className="flex items-center gap-3 min-w-0 flex-1">
+      <div
+        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+        style={{ background: `${iconColor}15`, border: `1px solid ${iconColor}25` }}
+        aria-hidden="true"
+      >
+        <Icon size={15} style={{ color: iconColor }} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-white truncate">{title}</p>
+        {sub && <p className="text-[11px] text-pp-text-muted truncate">{sub}</p>}
+      </div>
+    </div>
+    <div className="shrink-0">{getStatusBadge(daysRemaining)}</div>
+  </div>
+)
+
+// Skeleton Loader
+const SkeletonCard = () => (
+  <div className="pp-glass p-5 flex flex-col gap-3">
+    <div className="pp-skeleton h-3 w-20 rounded" />
+    <div className="pp-skeleton h-8 w-16 rounded" />
+    <div className="pp-skeleton h-2 w-24 rounded" />
+  </div>
+)
+
+const Dashboard = () => {
+  const [subscriptions] = useLocalStorage('subscriptions', [])
   const [warranties, setWarranties] = useState([])
   const [loading, setLoading] = useState(true)
   const [userName, setUserName] = useState('')
 
-  // State for AI Agent Chat
+  // AI Chat state
   const [chatMessages, setChatMessages] = useState([])
   const [chatInput, setChatInput] = useState('')
   const [isSendingChat, setIsSendingChat] = useState(false)
   const chatEndRef = useRef(null)
 
-  // Load chat history from localStorage on mount
+  const greeting = getGreeting()
+  const GreetIcon = greeting.icon
+
+  // Load chat history from localStorage
   useEffect(() => {
-    const savedChat = localStorage.getItem('payproof_agent_chat')
-    if (savedChat) {
-      try {
-        setChatMessages(JSON.parse(savedChat))
-      } catch (e) {
-        console.error('Failed to parse saved chat', e)
-      }
+    const saved = localStorage.getItem('payproof_agent_chat')
+    if (saved) {
+      try { setChatMessages(JSON.parse(saved)) } catch { /* ignore */ }
     }
   }, [])
 
-  // Save chat to localStorage helper
-  const saveChatHistory = (messages) => {
-    localStorage.setItem('payproof_agent_chat', JSON.stringify(messages))
-  }
+  const saveChatHistory = (msgs) => localStorage.setItem('payproof_agent_chat', JSON.stringify(msgs))
 
-  // Scroll to bottom when messages update
+  // Auto scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages, isSendingChat])
 
+  // Fetch dashboard data
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+    const fetchData = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        // Fetch User Name (Proof of Profile creation)
         const { data: profile } = await supabase
-          .from('profiles')
-          .select('first_name')
-          .eq('id', user.id)
-          .single();
-        if (profile) setUserName(profile.first_name);
+          .from('profiles').select('first_name').eq('id', user.id).single()
+        if (profile) setUserName(profile.first_name)
 
-        const { data } = await supabase
-          .from('warranties')
-          .select('*')
-          .eq('user_id', user.id); // Filter by user
-        setWarranties(data || []);
+        const { data: wData } = await supabase
+          .from('warranties').select('*').eq('user_id', user.id)
+        setWarranties(wData || [])
       }
-      setLoading(false);
-    };
-    fetchDashboardData();
+      setLoading(false)
+    }
+    fetchData()
   }, [])
 
-  const handleSendChatMessage = async (e) => {
+  const handleSendChat = async (e) => {
     e.preventDefault()
     if (!chatInput.trim() || isSendingChat) return
 
-    const userMessage = {
-      role: 'user',
-      text: chatInput.trim()
-    }
-
-    const updatedMessages = [...chatMessages, userMessage]
-    setChatMessages(updatedMessages)
-    saveChatHistory(updatedMessages)
+    const userMsg = { role: 'user', text: chatInput.trim() }
+    const updated = [...chatMessages, userMsg]
+    setChatMessages(updated)
+    saveChatHistory(updated)
     setChatInput('')
     setIsSendingChat(true)
 
     try {
-      // Map history to the required format for Gemini
-      const apiHistory = updatedMessages.map(msg => ({
-        role: msg.role,
-        text: msg.text
-      }))
-      const lastQuestion = apiHistory.pop().text
-
-      const responseText = await askGeminiAgent(lastQuestion, apiHistory)
-
-      const agentMessage = {
-        role: 'model',
-        text: responseText
-      }
-
-      const finalMessages = [...updatedMessages, agentMessage]
-      setChatMessages(finalMessages)
-      saveChatHistory(finalMessages)
+      const history = updated.map(m => ({ role: m.role, text: m.text }))
+      const question = history.pop().text
+      const response = await askGeminiAgent(question, history)
+      const agentMsg = { role: 'model', text: response }
+      const final = [...updated, agentMsg]
+      setChatMessages(final)
+      saveChatHistory(final)
     } catch (err) {
-      console.error('Error in agent chat:', err)
-      const errorMessage = {
-        role: 'model',
-        text: `⚠️ אירעה שגיאה בחיבור לסוכן: ${err.message}. אנא נסה שוב.`
-      }
-      setChatMessages(prev => [...prev, errorMessage])
+      const errMsg = { role: 'model', text: `⚠️ שגיאה: ${err.message}` }
+      setChatMessages(prev => [...prev, errMsg])
     } finally {
       setIsSendingChat(false)
     }
@@ -117,261 +168,319 @@ const Dashboard = () => {
     }
   }
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  // Calculate statistics
+  // Statistics
   const activeSubscriptions = subscriptions.filter(s => s.status === 'Active').length
   const expiredSubscriptions = subscriptions.filter(s => {
-    const days = getDaysRemaining(s.renewalDate)
-    return days !== null && days < 0
+    const d = getDaysRemaining(s.renewalDate); return d !== null && d < 0
   }).length
-  const expiringSoonSubscriptions = subscriptions.filter(s => {
-    const days = getDaysRemaining(s.renewalDate)
-    return days !== null && days > 0 && days <= 30
+  const expiringSoonSubs = subscriptions.filter(s => {
+    const d = getDaysRemaining(s.renewalDate); return d !== null && d >= 0 && d <= 30
   }).length
-
   const expiredWarranties = warranties.filter(w => {
-    const days = getDaysRemaining(w.expiry_date) // Note: Snake case from DB
-    return days !== null && days < 0
+    const d = getDaysRemaining(w.expiry_date); return d !== null && d < 0
   }).length
   const expiringSoonWarranties = warranties.filter(w => {
-    const days = getDaysRemaining(w.expiry_date)
-    return days !== null && days > 0 && days <= 30
+    const d = getDaysRemaining(w.expiry_date); return d !== null && d >= 0 && d <= 30
+  }).length
+  const totalAlerts = expiredSubscriptions + expiredWarranties + expiringSoonSubs + expiringSoonWarranties
+  const totalActive = activeSubscriptions + warranties.filter(w => {
+    const d = getDaysRemaining(w.expiry_date); return d === null || d >= 0
   }).length
 
-  const totalAlerts = expiredSubscriptions + expiredWarranties + expiringSoonSubscriptions + expiringSoonWarranties
-
-  // Get items ending soon
-  const warrantiesEndingSoon = warranties
-    .map(w => ({
-      ...w,
-      daysRemaining: getDaysRemaining(w.expiry_date),
-      productName: w.product_name, // Map Snake Case DB to Component
-      category: w.category || 'כללי'
-    }))
+  // Upcoming items
+  const upcomingWarranties = warranties
+    .map(w => ({ ...w, daysRemaining: getDaysRemaining(w.expiry_date) }))
     .filter(w => w.daysRemaining !== null && w.daysRemaining <= 30)
     .sort((a, b) => a.daysRemaining - b.daysRemaining)
-    .slice(0, 5)
+    .slice(0, 4)
 
-  const subscriptionsEndingSoon = subscriptions
+  const upcomingSubs = subscriptions
     .filter(s => s.status === 'Active')
-    .map(s => ({
-      ...s,
-      daysRemaining: getDaysRemaining(s.renewalDate)
-    }))
+    .map(s => ({ ...s, daysRemaining: getDaysRemaining(s.renewalDate) }))
     .filter(s => s.daysRemaining !== null && s.daysRemaining <= 30)
     .sort((a, b) => a.daysRemaining - b.daysRemaining)
-    .slice(0, 5)
-
-  const getStatusBadge = (daysRemaining) => {
-    const color = getStatusColor(daysRemaining)
-    const colorClasses = {
-      red: 'bg-red-500/20 text-red-400 border-red-500/50',
-      yellow: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50',
-      green: 'bg-green-500/20 text-green-400 border-green-500/50'
-    }
-    return `px-2 py-1 rounded-full text-xs font-medium border ${colorClasses[color]}`
-  }
+    .slice(0, 4)
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold mb-6">לוח בקרה {userName && <span className="text-blue-500">• שלום, {userName}</span>}</h1>
+    <div className="space-y-6 max-w-7xl mx-auto" dir="rtl">
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-400 text-sm mb-1">סיכום היום</p>
-              <p className="text-2xl font-bold">{activeSubscriptions + warranties.length}</p>
-              <p className="text-xs text-gray-500 mt-1">פריטים פעילים</p>
-            </div>
-            <div className="p-3 bg-blue-500/20 rounded-lg">
-              <TrendingUp className="text-blue-400" size={24} />
-            </div>
+      {/* ─── Hero Header ─── */}
+      <div className="animate-slide-up flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <GreetIcon size={16} className="text-pp-amber" aria-hidden="true" />
+            <span className="text-pp-text-secondary text-sm font-medium">{greeting.text}</span>
           </div>
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-white">
+            {userName ? (
+              <>שלום, <span className="pp-gradient-text">{userName}</span> 👋</>
+            ) : (
+              <span className="pp-gradient-text">PayProof</span>
+            )}
+          </h1>
+          <p className="text-pp-text-secondary text-sm mt-1">
+            {new Date().toLocaleDateString('he-IL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
         </div>
-
-        <div className="glass-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-400 text-sm mb-1">דורש תשומת לב</p>
-              <p className="text-2xl font-bold text-red-400">{expiredSubscriptions + expiredWarranties}</p>
-              <p className="text-xs text-gray-500 mt-1">פריטים שפגו</p>
-            </div>
-            <div className="p-3 bg-red-500/20 rounded-lg">
-              <AlertCircle className="text-red-400" size={24} />
-            </div>
-          </div>
-        </div>
-
-        <div className="glass-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-400 text-sm mb-1">התראות חדשות</p>
-              <p className="text-2xl font-bold text-yellow-400">{totalAlerts}</p>
-              <p className="text-xs text-gray-500 mt-1">סה"כ התראות</p>
-            </div>
-            <div className="p-3 bg-yellow-500/20 rounded-lg">
-              <Bell className="text-yellow-400" size={24} />
-            </div>
-          </div>
-        </div>
-
-        <div className="glass-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-400 text-sm mb-1">מנויים פעילים</p>
-              <p className="text-2xl font-bold text-green-400">{activeSubscriptions}</p>
-              <p className="text-xs text-gray-500 mt-1">מנויים פעילים</p>
-            </div>
-            <div className="p-3 bg-green-500/20 rounded-lg">
-              <CreditCard className="text-green-400" size={24} />
-            </div>
-          </div>
+        {/* Live indicator */}
+        <div className="flex items-center gap-2 pp-glass px-4 py-2 self-start sm:self-auto">
+          <span className="pp-live-dot" aria-hidden="true" />
+          <span className="text-xs font-medium text-pp-text-secondary">מחובר לאחסון בענן</span>
         </div>
       </div>
 
-      {/* 2-Column Grid Layout for Main Content & AI Agent */}
+      {/* ─── Bento Stats Grid ─── */}
+      {loading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[0,1,2,3].map(i => <SkeletonCard key={i} />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            icon={TrendingUp}
+            label="פריטים פעילים"
+            value={totalActive}
+            sub="סה״כ במעקב"
+            color="var(--pp-violet)"
+            delay={0}
+          />
+          <StatCard
+            icon={CreditCard}
+            label="מנויים פעילים"
+            value={activeSubscriptions}
+            sub="חודשי / שנתי"
+            color="var(--pp-cyan)"
+            delay={80}
+          />
+          <StatCard
+            icon={AlertCircle}
+            label="דורש תשומת לב"
+            value={expiredSubscriptions + expiredWarranties}
+            sub="פריטים פגי תוקף"
+            color="var(--pp-coral)"
+            delay={160}
+          />
+          <StatCard
+            icon={Bell}
+            label="התראות קרובות"
+            value={totalAlerts}
+            sub="ב-30 הימים הקרובים"
+            color="var(--pp-amber)"
+            delay={240}
+          />
+        </div>
+      )}
+
+      {/* ─── Main Bento Grid ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Side: Upcoming items (Warranties & Subscriptions) */}
-        <div className="lg:col-span-2 space-y-6">
+
+        {/* ─── Upcoming Items (2 cols) ─── */}
+        <div className="lg:col-span-2 space-y-4">
+
           {/* Warranties Ending Soon */}
-          <div className="glass-card">
-            <h2 className="text-xl font-bold mb-4">אחריות שפוגות בקרוב</h2>
-            {warrantiesEndingSoon.length === 0 ? (
-              <p className="text-gray-400">אין אחריות שפוגות בקרוב</p>
-            ) : (
+          <div className="pp-glass-card animate-slide-up" style={{ animationDelay: '100ms' }}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-pp-mint/15 border border-pp-mint/25 flex items-center justify-center" aria-hidden="true">
+                  <Shield size={14} className="text-pp-mint" />
+                </div>
+                <h2 className="font-display font-semibold text-base text-white">אחריות שפוגות בקרוב</h2>
+              </div>
+              {upcomingWarranties.length > 0 && (
+                <span className="pp-badge-warning">{upcomingWarranties.length} פריטים</span>
+              )}
+            </div>
+
+            {loading ? (
               <div className="space-y-3">
-                {warrantiesEndingSoon.map((warranty) => (
-                  <div
-                    key={warranty.id}
-                    className="flex items-center justify-between p-4 bg-dark-card/50 rounded-lg border border-white/5"
-                  >
-                    <div className="flex-1 text-right">
-                      <p className="font-medium">{warranty.productName}</p>
-                      <p className="text-sm text-gray-400">{warranty.category} • {formatDate(warranty.expiryDate)}</p>
-                    </div>
-                    <div className={getStatusBadge(warranty.daysRemaining)}>
-                      {warranty.daysRemaining < 0
-                        ? `פג לפני ${Math.abs(warranty.daysRemaining)} ימים`
-                        : `נותרו ${warranty.daysRemaining} ימים`}
-                    </div>
-                  </div>
+                {[0,1,2].map(i => <div key={i} className="pp-skeleton h-12 rounded-lg" />)}
+              </div>
+            ) : upcomingWarranties.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-pp-mint/10 flex items-center justify-center mb-3" aria-hidden="true">
+                  <Shield size={24} className="text-pp-mint" />
+                </div>
+                <p className="text-pp-text-secondary text-sm font-medium">אין אחריות שפוגות בקרוב</p>
+                <p className="text-pp-text-muted text-xs mt-1">כל האחריות שלך בתוקף 🎉</p>
+              </div>
+            ) : (
+              <div>
+                {upcomingWarranties.map((w) => (
+                  <UpcomingRow
+                    key={w.id}
+                    title={w.product_name}
+                    sub={`${w.store || 'כללי'} • ${w.expiry_date ? new Date(w.expiry_date).toLocaleDateString('he-IL') : ''}`}
+                    daysRemaining={w.daysRemaining}
+                    icon={Shield}
+                    iconColor="var(--pp-mint)"
+                  />
                 ))}
               </div>
             )}
           </div>
 
           {/* Subscriptions Ending Soon */}
-          <div className="glass-card">
-            <h2 className="text-xl font-bold mb-4">מנויים שפוגים בקרוב</h2>
-            {subscriptionsEndingSoon.length === 0 ? (
-              <p className="text-gray-400">אין מנויים שפוגים בקרוב</p>
+          <div className="pp-glass-card animate-slide-up" style={{ animationDelay: '200ms' }}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-pp-cyan/15 border border-pp-cyan/25 flex items-center justify-center" aria-hidden="true">
+                  <CreditCard size={14} className="text-pp-cyan" />
+                </div>
+                <h2 className="font-display font-semibold text-base text-white">מנויים שפוגים בקרוב</h2>
+              </div>
+              {upcomingSubs.length > 0 && (
+                <span className="pp-badge-info">{upcomingSubs.length} פריטים</span>
+              )}
+            </div>
+
+            {upcomingSubs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-pp-cyan/10 flex items-center justify-center mb-3" aria-hidden="true">
+                  <CreditCard size={24} className="text-pp-cyan" />
+                </div>
+                <p className="text-pp-text-secondary text-sm font-medium">אין מנויים שפוגים בקרוב</p>
+                <p className="text-pp-text-muted text-xs mt-1">כל המנויים שלך תקינים ✅</p>
+              </div>
             ) : (
-              <div className="space-y-3">
-                {subscriptionsEndingSoon.map((subscription) => (
-                  <div
-                    key={subscription.id}
-                    className="flex items-center justify-between p-4 bg-dark-card/50 rounded-lg border border-white/5"
-                  >
-                    <div className="flex-1 text-right">
-                      <p className="font-medium">{subscription.name}</p>
-                      <p className="text-sm text-gray-400">₪{subscription.price} • {formatDate(subscription.renewalDate)}</p>
-                    </div>
-                    <div className={getStatusBadge(subscription.daysRemaining)}>
-                      {subscription.daysRemaining < 0
-                        ? `פג לפני ${Math.abs(subscription.daysRemaining)} ימים`
-                        : `נותרו ${subscription.daysRemaining} ימים`}
-                    </div>
-                  </div>
+              <div>
+                {upcomingSubs.map((s) => (
+                  <UpcomingRow
+                    key={s.id}
+                    title={s.name}
+                    sub={`₪${s.price} • ${formatDate(s.renewalDate)}`}
+                    daysRemaining={s.daysRemaining}
+                    icon={CreditCard}
+                    iconColor="var(--pp-cyan)"
+                  />
                 ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Side: AI Agent Chat */}
+        {/* ─── AI Agent Chat (1 col) ─── */}
         <div className="lg:col-span-1">
-          <div className="glass-card flex flex-col h-[500px]">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
+          <div
+            className="pp-glass flex flex-col animate-slide-up"
+            style={{ height: '480px', animationDelay: '150ms' }}
+          >
+            {/* Chat Header */}
+            <div className="flex items-center justify-between p-4 border-b border-white/5 shrink-0">
               <div className="flex items-center gap-2">
-                <Sparkles className="text-blue-400 animate-pulse" size={20} />
-                <h2 className="text-xl font-bold">התייעצות עם סוכן AI</h2>
+                <div className="w-7 h-7 rounded-lg bg-pp-violet/20 border border-pp-violet/30 flex items-center justify-center" aria-hidden="true">
+                  <Sparkles size={14} className="text-pp-violet" />
+                </div>
+                <div>
+                  <h2 className="font-display font-semibold text-sm text-white">סוכן AI</h2>
+                  <p className="text-[10px] text-pp-text-muted">Powered by Gemini</p>
+                </div>
               </div>
               {chatMessages.length > 0 && (
                 <button
                   onClick={handleClearChat}
-                  className="text-xs text-red-400 hover:text-red-300 font-medium"
+                  aria-label="אפס שיחה"
+                  title="אפס שיחה"
+                  className="p-1.5 rounded-lg text-pp-text-muted hover:text-pp-coral hover:bg-pp-coral/10 transition-all cursor-pointer pp-focus"
                 >
-                  איפוס
+                  <RotateCcw size={13} />
                 </button>
               )}
             </div>
 
-            {/* Message Area */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1 mb-4 text-right text-sm">
+            {/* Messages Area */}
+            <div
+              className="flex-1 overflow-y-auto p-3 space-y-2"
+              dir="rtl"
+              role="log"
+              aria-live="polite"
+              aria-label="שיחה עם סוכן AI"
+            >
               {chatMessages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center p-4">
-                  <span className="text-3xl mb-2">🤖</span>
-                  <h4 className="font-bold text-gray-200 mb-2">שלום {userName || 'אורח'}!</h4>
-                  <p className="text-xs text-gray-400 max-w-[200px] leading-relaxed">
-                    שאל אותי הכל על המנויים שלך, תאריכי אחריות, או איך לחסוך בהוצאות.
-                  </p>
+                <div className="flex flex-col items-center justify-center h-full text-center p-4 gap-3">
+                  <div className="w-14 h-14 rounded-2xl bg-pp-violet/10 border border-pp-violet/20 flex items-center justify-center animate-float" aria-hidden="true">
+                    <Sparkles size={26} className="text-pp-violet" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-white text-sm mb-1">שלום {userName || 'אורח'}!</h4>
+                    <p className="text-xs text-pp-text-muted leading-relaxed max-w-[180px] mx-auto">
+                      שאל אותי הכל על המנויים, האחריות, או איך לחסוך בהוצאות.
+                    </p>
+                  </div>
+                  {/* Suggestion chips */}
+                  <div className="flex flex-col gap-1.5 w-full">
+                    {['מה הסטטוס שלי?', 'איך לחסוך כסף?', 'מה פג תוקף?'].map(s => (
+                      <button
+                        key={s}
+                        onClick={() => setChatInput(s)}
+                        className="w-full text-right text-xs py-2 px-3 rounded-lg bg-white/4 border border-white/8 text-pp-text-secondary hover:bg-white/8 hover:text-white transition-all cursor-pointer"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
-                chatMessages.map((msg, index) => (
-                  <div key={index} className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}>
-                    <div className={`max-w-[85%] rounded-2xl p-3 ${
-                      msg.role === 'user'
-                        ? 'bg-blue-600 text-white rounded-tr-none'
-                        : 'bg-dark-surface/80 border border-white/10 text-gray-200 rounded-tl-none'
-                    }`}>
-                      <p className="font-bold text-[10px] mb-1 text-gray-400">
+                chatMessages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}
+                    aria-label={msg.role === 'user' ? 'הודעה שלך' : 'תשובת סוכן'}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed ${
+                        msg.role === 'user'
+                          ? 'bg-pp-violet/30 border border-pp-violet/30 text-white rounded-tl-sm'
+                          : 'bg-white/5 border border-white/8 text-pp-text-secondary rounded-tr-sm'
+                      }`}
+                    >
+                      <p className="font-bold text-[9px] mb-1 opacity-60">
                         {msg.role === 'user' ? 'אתה' : 'סוכן PayProof'}
                       </p>
-                      <p className="whitespace-pre-line leading-relaxed text-xs">{msg.text}</p>
+                      <p className="whitespace-pre-line">{msg.text}</p>
                     </div>
                   </div>
                 ))
               )}
               {isSendingChat && (
-                <div className="flex justify-end">
-                  <div className="max-w-[85%] bg-dark-surface/80 border border-white/10 text-gray-300 rounded-2xl rounded-tl-none p-3 flex items-center gap-2">
-                    <Loader2 className="animate-spin text-blue-400" size={14} />
-                    <span className="text-xs text-gray-400">הסוכן חושב...</span>
+                <div className="flex justify-end" aria-live="polite">
+                  <div className="bg-white/5 border border-white/8 rounded-2xl rounded-tr-sm px-3 py-2 flex items-center gap-2">
+                    <Loader2 size={12} className="animate-spin text-pp-violet" />
+                    <span className="text-[10px] text-pp-text-muted">הסוכן חושב...</span>
                   </div>
                 </div>
               )}
               <div ref={chatEndRef} />
             </div>
 
-            {/* Input form */}
-            <form onSubmit={handleSendChatMessage} className="flex gap-2">
+            {/* Input Form */}
+            <form onSubmit={handleSendChat} className="p-3 border-t border-white/5 flex gap-2 shrink-0">
               <input
+                id="ai-chat-input"
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 disabled={isSendingChat}
                 placeholder="שאל את הסוכן..."
-                className="input-field flex-1 text-xs py-2 px-3 text-right"
+                className="pp-input flex-1 text-xs py-2 px-3 text-right pp-focus"
                 dir="rtl"
+                aria-label="הכנס שאלה לסוכן"
               />
               <button
+                id="ai-chat-submit"
                 type="submit"
                 disabled={isSendingChat || !chatInput.trim()}
-                className="btn-primary p-2 flex items-center justify-center shrink-0 disabled:bg-gray-600/50 disabled:text-gray-400/50"
+                aria-label="שלח הודעה"
+                className="pp-btn-primary px-3 py-2 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
               >
-                <Send size={16} />
+                <Send size={14} />
               </button>
             </form>
           </div>
         </div>
+
       </div>
     </div>
   )
 }
 
 export default Dashboard
-
