@@ -1,0 +1,60 @@
+# UI/UX Pro Max Skill & Multi-Agent Workflow
+
+This workspace is configured with the **UI/UX Pro Max** design system and uses a structured multi-agent development workflow.
+
+---
+
+## 🎨 UI/UX Pro Max Design Principles
+
+All designs generated must follow these modern, premium UI/UX guidelines:
+
+### 1. Visual Aesthetics
+- **Harmonious Color Palettes**: Avoid generic colors. Use curated HSL palettes (e.g. Slate/Navy backgrounds for dark modes, warm whites for light modes, and vibrant CTA accents).
+- **Modern Typography**: Use Google Fonts like Inter, Montserrat, or Outfit instead of browser defaults. Ensure clean line-height and letter-spacing.
+- **Glassmorphism & Depth**: Use smooth gradients, frosted-glass backdrops (`backdrop-blur-md`), subtle borders (`border-white/10`), and deep box-shadows.
+- **Bento Grid & Layouts**: Use modern card layouts with rounded corners (`rounded-2xl` or `rounded-3xl`) and appropriate gaps (`gap-6`).
+- **Aurora UI / Gradients**: Implement blur radial gradients to create glowing background lights.
+
+### 2. Pre-Delivery Checklist
+- [ ] **No Emojis as Icons**: Use vector SVGs (Lucide React or Heroicons) for all icons.
+- [ ] **Cursor Pointer**: Ensure `cursor-pointer` is applied to all clickable elements.
+- [ ] **Smooth Transitions**: All hover and active states must have smooth transitions (`transition-all duration-300`).
+- [ ] **Accessibility (WCAG AA)**: Maintain a minimum text contrast ratio of 4.5:1.
+- [ ] **Keyboard Navigation**: Focus states must be visible (`focus-visible:ring-2`).
+- [ ] **Responsive Design**: Test and ensure layouts scale elegantly across breakpoints (375px, 768px, 1024px, 1440px).
+
+---
+
+## 👥 Multi-Agent Development Workflow
+
+For every coding or development task, we must simulate and follow this 4-step pipeline:
+
+```mermaid
+graph TD
+    A[1. Builder Agent] -->|Writes code & applies UI/UX rules| B[2. Reviewer Agent]
+    B -->|Reviews code, designs, and RLS policies| C[3. Matan]
+    C -->|Provides feedback and custom input| D[4. Final Reviewer]
+    D -->|Validates checklist and gives final polish| E[Perfection]
+```
+
+### 1. The Builder Agent
+- **Role**: Writes the implementation code.
+- **Focus**: Strictly applies the **UI/UX Pro Max** rules and sets up clean code, robust database schemas, and storage buckets.
+
+### 2. The Reviewer Agent
+- **Role**: Conducts a technical and visual review of the Builder's work.
+- **Focus**: Checks for bugs, security issues (such as Supabase RLS policies), responsiveness, and compliance with the design rules.
+
+### 3. Matan
+- **Role**: Provides creative and functional input on usability and product design.
+- **Focus**: Looks at the layout from a user perspective and suggests custom polish.
+
+### 4. The Final Reviewer
+- **Role**: Ensures absolute perfection.
+- **Focus**: Runs the pre-delivery checklist, verifies that all transitions are smooth, and gives the final approval.
+
+---
+
+## 💬 Communication
+- Always communicate with the user in **Hebrew**.
+- Present the workflow steps clearly when reporting progress.
