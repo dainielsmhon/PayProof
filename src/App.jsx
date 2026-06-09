@@ -10,6 +10,8 @@ import Warranties from './pages/Warranties'
 import Receipts from './pages/Receipts'
 import UserManagement from './pages/UserManagement'
 import ResetPassword from './pages/ResetPassword'
+import Transactions from './pages/Transactions'
+import SettingsPage from './pages/Settings'
 
 function App() {
 
@@ -56,6 +58,14 @@ function App() {
           </ProtectedRoute>
         } />
 
+        <Route path="/transactions" element={
+          <ProtectedRoute>
+            <Layout>
+              <Transactions />
+            </Layout>
+          </ProtectedRoute>
+        } />
+
         <Route path="/warranties" element={
           <ProtectedRoute>
             <Layout>
@@ -76,6 +86,14 @@ function App() {
           <ProtectedRoute>
             <Layout>
               <UserManagement />
+            </Layout>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/settings" element={
+          <ProtectedRoute>
+            <Layout>
+              <SettingsPage />
             </Layout>
           </ProtectedRoute>
         } />

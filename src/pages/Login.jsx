@@ -154,8 +154,8 @@ const Login = () => {
                     {/* Logo Header */}
                     <div className="text-center mb-8">
                         {/* Logo Icon */}
-                        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4 shadow-glow-violet animate-float" style={{ background: 'linear-gradient(135deg, var(--pp-violet), var(--pp-cyan))' }}>
-                            <Zap size={26} className="text-white" fill="white" aria-hidden="true" />
+                        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4 overflow-hidden border border-white/10 shadow-glow-violet animate-float bg-pp-bg">
+                            <img src="/apple-touch-icon.png" alt="Logo" className="w-full h-full object-cover" />
                         </div>
                         <h1 className="text-3xl font-display font-black pp-gradient-text mb-1">PayProof</h1>
                         <p className="text-pp-text-secondary text-sm font-medium">

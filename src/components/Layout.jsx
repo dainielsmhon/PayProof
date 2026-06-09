@@ -14,15 +14,17 @@ import {
   Bell,
   Settings,
   Menu,
-  X
+  X,
+  TrendingUp
 } from 'lucide-react'
 
 const menuItems = [
   { path: '/',              icon: LayoutDashboard, label: 'לוח בקרה',        color: 'var(--pp-violet)' },
+  { path: '/transactions',  icon: TrendingUp,      label: 'מעקב פיננסי',     color: 'var(--pp-mint)' },
   { path: '/subscriptions', icon: CreditCard,      label: 'מנויים',          color: 'var(--pp-cyan)' },
-  { path: '/warranties',    icon: Shield,          label: 'אחריות',          color: 'var(--pp-mint)' },
-  { path: '/receipts',      icon: FileText,        label: 'קבלות',           color: 'var(--pp-amber)' },
-  { path: '/users',         icon: Users,           label: 'ניהול משתמשים',   color: 'var(--pp-coral)' },
+  { path: '/warranties',    icon: Shield,          label: 'אחריות',          color: 'var(--pp-amber)' },
+  { path: '/receipts',      icon: FileText,        label: 'קבלות',           color: 'var(--pp-coral)' },
+  { path: '/users',         icon: Users,           label: 'ניהול משתמשים',   color: 'var(--pp-violet)' },
 ]
 
 const Layout = ({ children }) => {
@@ -80,10 +82,10 @@ const Layout = ({ children }) => {
 
       {/* Logo / Branding */}
       <div className={`flex items-center gap-3 px-4 py-5 border-b border-white/5 ${collapsed && !isMobile ? 'justify-center px-2' : ''}`}>
-        {/* Zap Icon as Logo */}
+        {/* Logo Icon */}
         <div className="relative shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pp-violet to-pp-cyan flex items-center justify-center shadow-glow-violet">
-            <Zap size={18} className="text-white" fill="white" />
+          <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center border border-white/10 shadow-glow-violet bg-pp-bg">
+            <img src="/apple-touch-icon.png" alt="Logo" className="w-full h-full object-cover" />
           </div>
           {/* Live dot */}
           <span className="absolute -top-0.5 -left-0.5 pp-live-dot" />
@@ -190,13 +192,26 @@ const Layout = ({ children }) => {
 
         {/* Settings */}
         {(!collapsed || isMobile) && (
-          <button
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-pp-text-secondary hover:text-white hover:bg-white/5 transition-all duration-200 cursor-pointer pp-focus text-sm font-medium"
+          <Link
+            to="/settings"
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer pp-focus text-sm font-medium ${
+              location.pathname === '/settings'
+                ? 'text-white'
+                : 'text-pp-text-secondary hover:text-white'
+            }`}
+            style={{
+              background: location.pathname === '/settings'
+                ? 'linear-gradient(135deg, rgba(124,111,255,0.2), rgba(124,111,255,0.1))'
+                : 'transparent',
+              border: location.pathname === '/settings'
+                ? '1px solid rgba(124,111,255,0.3)'
+                : '1px solid transparent',
+            }}
             aria-label="הגדרות"
           >
-            <Settings size={18} className="shrink-0" />
+            <Settings size={18} className="shrink-0" style={{ color: location.pathname === '/settings' ? 'var(--pp-violet)' : undefined }} />
             <span>הגדרות</span>
-          </button>
+          </Link>
         )}
 
         {/* User Avatar + Info */}
@@ -276,12 +291,7 @@ const Layout = ({ children }) => {
 
         {/* Mobile Top Bar */}
         <header className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-white/5" style={{ background: 'rgba(10, 22, 40, 0.9)', backdropFilter: 'blur(20px)' }}>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-pp-violet to-pp-cyan flex items-center justify-center">
-              <Zap size={14} className="text-white" fill="white" />
-            </div>
-            <span className="font-display font-bold text-base pp-gradient-text">PayProof</span>
-          </div>
+          {/* Hamburger button on the right side in RTL */}
           <button
             onClick={() => setMobileOpen(true)}
             aria-label="פתח תפריט"
@@ -289,6 +299,14 @@ const Layout = ({ children }) => {
           >
             <Menu size={20} />
           </button>
+
+          {/* Logo on the left side in RTL */}
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center border border-white/10 bg-pp-bg">
+              <img src="/apple-touch-icon.png" alt="Logo" className="w-full h-full object-cover" />
+            </div>
+            <span className="font-display font-bold text-base pp-gradient-text">PayProof</span>
+          </div>
         </header>
 
         {/* Page Content */}
