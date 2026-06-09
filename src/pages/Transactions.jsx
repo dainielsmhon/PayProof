@@ -1,4 +1,4 @@
-// SUPABASE_READY: transactions
+// SUPABASE_READY: transactions (trigger deploy)
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
 import { askGeminiAgent, parseTextToTransactions } from '../lib/gemini'
