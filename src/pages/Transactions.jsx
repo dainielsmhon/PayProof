@@ -781,9 +781,11 @@ export default function Transactions() {
   const expense  = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0)
   const balance  = income - expense
 
-  // ── Bar chart: 12 months ─────────────────────
+  // ── Bar chart: 12 months (Calendar-based) ─────────────────────
   const barData = HEBREW_MONTHS.map((name, i) => {
-    const { from, to } = getBillingRange(year, i, billingDay)
+    const from = `${year}-${String(i + 1).padStart(2, '0')}-01`
+    const toDate = new Date(year, i + 1, 0)
+    const to = `${year}-${String(i + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`
     const monthTx = allTx.filter(t => t.transaction_date >= from && t.transaction_date <= to)
     return {
       name: name.slice(0,3),
