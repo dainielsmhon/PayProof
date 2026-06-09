@@ -104,8 +104,8 @@ const UserManagement = () => {
           email: user.email,
           role: 'admin',
           status: 'approved',
-          first_name: 'Admin',
-          last_name: 'User'
+          first_name: 'דניאל',
+          last_name: 'שמעון'
         });
 
       if (error) throw error;

@@ -44,7 +44,7 @@ const Layout = ({ children }) => {
           .select('first_name, last_name')
           .eq('id', user.id)
           .single()
-        setUserProfile(profile || { first_name: user.email?.split('@')[0] || 'משתמש', last_name: '' })
+        setUserProfile(profile || { first_name: 'דניאל', last_name: '' })
       }
     }
     fetchProfile()

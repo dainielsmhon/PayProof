@@ -90,7 +90,7 @@ const Dashboard = () => {
   const [subscriptions] = useLocalStorage('subscriptions', [])
   const [warranties, setWarranties] = useState([])
   const [loading, setLoading] = useState(true)
-  const [userName, setUserName] = useState('')
+  const [userName, setUserName] = useState('דניאל')
 
   // AI Chat state
   const [chatMessages, setChatMessages] = useState([])
