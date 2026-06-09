@@ -1,7 +1,7 @@
 // SUPABASE_READY: transactions
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
-import { askGeminiAgent } from '../lib/gemini'
+import { askGeminiAgent, parseTextToTransactions } from '../lib/gemini'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
@@ -63,6 +63,68 @@ function parseCSV(text) {
     }
   }).filter(Boolean)
 }
+
+// ── PDF.js & SheetJS Dynamic Loaders & Extractors ──
+const loadPdfJs = () => {
+  return new Promise((resolve, reject) => {
+    if (window.pdfjsLib) {
+      resolve(window.pdfjsLib)
+      return
+    }
+    const script = document.createElement('script')
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js'
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js'
+      resolve(window.pdfjsLib)
+    }
+    script.onerror = () => reject(new Error('שגיאה בטעינת ספריית PDF.js מהרשת'))
+    document.head.appendChild(script)
+  })
+}
+
+const extractTextFromPdf = async (file) => {
+  const pdfjsLib = await loadPdfJs()
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  let fullText = ''
+  
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const textContent = await page.getTextContent()
+    const pageText = textContent.items.map(item => item.str).join(' ')
+    fullText += pageText + '\n'
+  }
+  return fullText
+}
+
+const loadXlsx = () => {
+  return new Promise((resolve, reject) => {
+    if (window.XLSX) {
+      resolve(window.XLSX)
+      return
+    }
+    const script = document.createElement('script')
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+    script.onload = () => resolve(window.XLSX)
+    script.onerror = () => reject(new Error('שגיאה בטעינת ספריית Excel מהרשת'))
+    document.head.appendChild(script)
+  })
+}
+
+const extractTextFromXlsx = async (file) => {
+  const XLSX = await loadXlsx()
+  const arrayBuffer = await file.arrayBuffer()
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+  let fullText = ''
+  
+  workbook.SheetNames.forEach(sheetName => {
+    const worksheet = workbook.Sheets[sheetName]
+    const csv = XLSX.utils.sheet_to_csv(worksheet)
+    fullText += `--- Sheet: ${sheetName} ---\n${csv}\n`
+  })
+  return fullText
+}
+
 
 // ─────────────────────────────────────────────
 // Sub-components
@@ -409,14 +471,23 @@ export default function Transactions() {
       if (file.name.endsWith('.csv')) {
         const text = await file.text()
         rows = parseCSV(text)
+      } else if (file.name.endsWith('.pdf')) {
+        const rawText = await extractTextFromPdf(file)
+        if (!rawText.trim()) {
+          throw new Error('לא הצלחנו לחלץ טקסט מקובץ ה-PDF. ייתכן והוא סרוק או ריק.')
+        }
+        rows = await parseTextToTransactions(rawText)
+      } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const rawText = await extractTextFromXlsx(file)
+        rows = await parseTextToTransactions(rawText)
       } else {
-        setUploadMsg({ type: 'error', text: 'כרגע תמיכה ב-CSV בלבד. תמיכה ב-XLSX ו-PDF בקרוב.' })
+        setUploadMsg({ type: 'error', text: 'סיומת קובץ לא נתמכת. יש להעלות קובצי CSV, XLSX או PDF.' })
         setUploading(false)
         return
       }
 
       if (rows.length === 0) {
-        setUploadMsg({ type: 'error', text: 'לא נמצאו שורות תקינות בקובץ.' })
+        setUploadMsg({ type: 'error', text: 'לא נמצאו עסקאות תקינות לפענוח בקובץ.' })
         setUploading(false)
         return
       }
@@ -425,17 +496,21 @@ export default function Transactions() {
       for (const row of rows) {
         const { error: e } = await supabase.from('transactions').upsert({
           user_id: user.id,
-          ...row,
+          type: row.type === 'income' ? 'income' : 'expense',
+          name: row.name.trim(),
+          amount: parseFloat(row.amount),
+          transaction_date: row.transaction_date,
           source_file: file.name,
         }, { onConflict: 'user_id,name,amount,transaction_date', ignoreDuplicates: true })
-        if (e && e.code !== '23505') { console.error(e); skipped++ }
+        if (e) { console.error('Upsert failed for row:', row, e); skipped++ }
         else imported++
       }
 
-      setUploadMsg({ type: 'success', text: `יובאו ${imported} רשומות מתוך ${rows.length}. כפילויות דולגו אוטומטית.` })
+      setUploadMsg({ type: 'success', text: `יובאו בהצלחה ${imported} רשומות מתוך ${rows.length}. כפילויות דולגו אוטומטית.` })
       await fetchTransactions()
     } catch (e) {
-      setUploadMsg({ type: 'error', text: 'שגיאה בקריאת הקובץ: ' + e.message })
+      console.error(e)
+      setUploadMsg({ type: 'error', text: 'שגיאה בפענוח ועיבוד הקובץ: ' + e.message })
     } finally {
       setUploading(false)
     }

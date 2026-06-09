@@ -82,3 +82,63 @@ export async function askGeminiAgent(question, history = []) {
     throw error
   }
 }
+
+/**
+ * parseTextToTransactions - עיבוד טקסט חופשי (מתוך PDF או Excel) לרשימת עסקאות מובנית בעזרת Gemini
+ * @param {string} rawText - הטקסט הגולמי שחולץ מהמסמך
+ * @returns {Promise<Array>} - מערך של עסקאות מעובדות
+ */
+export async function parseTextToTransactions(rawText) {
+  if (!GEMINI_API_KEY) {
+    throw new Error('מפתח Gemini API (VITE_GEMINI_API_KEY) חסר בהגדרות המערכת (.env)')
+  }
+
+  const prompt = `להלן טקסט גולמי מתוך תדפיס בנק או כרטיס אשראי. חלץ מתוכו את כל עסקאות החיוב והזיכוי שבוצעו.
+החזר אך ורק מערך JSON תקני (Array of objects), ללא שום בלוקי עיצוב של markdown (כמו \`\`\`json או \`\`\`), המכיל אובייקטים של עסקאות עם המפתחות הבאים בדיוק:
+- "name": שם בית העסק בעברית או באנגלית כפי שמופיע בתדפיס (לדוגמה: "שופרסל", "הוראת קבע נטפליקס", "תחנת דלק פז")
+- "amount": סכום העסקה (מספר עשרוני חיובי בלבד, לדוגמה: 150.50)
+- "transaction_date": תאריך העסקה בפורמט "YYYY-MM-DD" (אם השנה אינה מופיעה, הנח שהשנה היא 2026 או השנה הנוכחית של הדוח)
+- "type": סוג העסקה - תמיד "expense" (הוצאה) עבור חיובים או "income" (הכנסה) עבור זיכויים/החזרים/משכורת.
+
+טקסט גולמי מהקובץ:
+${rawText}
+
+במידה ולא נמצאו עסקאות, החזר מערך ריק [].`
+
+  const requestBody = {
+    contents: [{
+      role: 'user',
+      parts: [{ text: prompt }]
+    }],
+    generationConfig: {
+      temperature: 0.1, // טמפרטורה נמוכה לעקביות מבנית
+      responseMimeType: "application/json" // קבלת תגובה בפורמט JSON נקי
+    }
+  }
+
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    })
+
+    if (!response.ok) {
+      throw new Error(`שגיאת תקשורת מול Gemini API בשירות הפענוח: ${response.status}`)
+    }
+
+    const resData = await response.json()
+    const responseText = resData?.candidates?.[0]?.content?.parts?.[0]?.text
+
+    if (!responseText) {
+      throw new Error('התקבלה תגובה ריקה משרת Gemini API בשירות הפענוח')
+    }
+
+    const cleanedText = responseText.trim()
+    return JSON.parse(cleanedText)
+  } catch (error) {
+    console.error('❌ שגיאה בפענוח טקסט לעסקאות בעזרת Gemini:', error)
+    throw error
+  }
+}
+
