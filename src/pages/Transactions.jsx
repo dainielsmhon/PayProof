@@ -22,6 +22,65 @@ const HEBREW_MONTHS = [
 
 const fmt = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 })}`
 
+// Helper to get date range for a given month/year and billing day
+const getBillingRange = (year, month, billingDay) => {
+  if (billingDay === 1) {
+    const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
+    const toDate = new Date(year, month + 1, 0)
+    const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`
+    return { from, to }
+  } else {
+    // Previous month starts on billingDay + 1
+    const fromDate = new Date(year, month - 1, billingDay + 1)
+    // Selected month ends on billingDay
+    const toDate = new Date(year, month, billingDay)
+    
+    const fromY = fromDate.getFullYear()
+    const fromM = String(fromDate.getMonth() + 1).padStart(2, '0')
+    const fromD = String(fromDate.getDate()).padStart(2, '0')
+    
+    const toY = toDate.getFullYear()
+    const toM = String(toDate.getMonth() + 1).padStart(2, '0')
+    const toD = String(toDate.getDate()).padStart(2, '0')
+    
+    return {
+      from: `${fromY}-${fromM}-${fromD}`,
+      to: `${toY}-${toM}-${toD}`
+    }
+  }
+}
+
+const adjustDateToBillingCycle = (originalDateStr, targetYear, targetMonth, billingDay) => {
+  const d = new Date(originalDateStr)
+  if (isNaN(d.getTime())) return originalDateStr
+  const originalDay = d.getDate()
+  
+  let year = targetYear
+  let month = targetMonth // 0-indexed
+  
+  if (billingDay > 1) {
+    if (originalDay > billingDay) {
+      // Belongs to the previous month's portion of the cycle
+      const prev = new Date(targetYear, targetMonth - 1, 1)
+      year = prev.getFullYear()
+      month = prev.getMonth()
+    } else {
+      // Belongs to the target month's portion
+      year = targetYear
+      month = targetMonth
+    }
+  }
+  
+  const lastDayOfTarget = new Date(year, month + 1, 0).getDate()
+  const finalDay = Math.min(originalDay, lastDayOfTarget)
+  
+  const finalDate = new Date(year, month, finalDay)
+  const y = finalDate.getFullYear()
+  const m = String(finalDate.getMonth() + 1).padStart(2, '0')
+  const dayStr = String(finalDate.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dayStr}`
+}
+
 const PIE_COLORS = [
   '#7C6FFF','#00D4FF','#00E5A0','#FF6B6B','#FFB347',
   '#FF69B4','#A8E063','#56CCF2','#F7971E','#C471ED'
@@ -341,6 +400,259 @@ const AddModal = ({ type, onClose, onSave, loading, existingTransactions }) => {
   )
 }
 
+// ── Upload Wizard Modal Component ──
+const UploadWizardModal = ({
+  file,
+  rows,
+  onClose,
+  onConfirm,
+  loading,
+  parsing,
+  billingDay,
+  month,
+  year
+}) => {
+  const [targetBillingDay, setTargetBillingDay] = useState(billingDay)
+  const [targetMonth, setTargetMonth] = useState(month)
+  const [targetYear, setTargetYear] = useState(year)
+  const [forceBillingCycle, setForceBillingCycle] = useState(true)
+  const [fileType, setFileType] = useState('credit') // 'credit' | 'bank'
+
+  if (parsing) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" dir="rtl">
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+        <div className="relative pp-glass rounded-2xl p-8 w-full max-w-sm flex flex-col items-center justify-center text-center animate-slide-up shadow-2xl" style={{ border: '1px solid rgba(0, 212, 255, 0.25)' }}>
+          <Loader2 size={36} className="animate-spin text-pp-cyan mb-4" />
+          <h2 className="text-base font-bold text-white mb-2">מנתח ומעבד את הקובץ...</h2>
+          <p className="text-xs text-pp-text-muted leading-relaxed">אנא המתן, סורק עסקאות ומחלץ נתונים בעזרת מנוע AI</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Calculate adjusted rows preview
+  const previewRows = rows.map(row => {
+    const amountParsed = parseFloat(row.amount)
+    const absoluteAmount = Math.abs(amountParsed)
+    
+    let typeParsed = 'expense'
+    if (fileType === 'credit') {
+      // In credit card statements: positive is charge (expense), negative is credit (income)
+      if (amountParsed < 0) {
+        typeParsed = 'income'
+      } else if (row.type === 'income' || row.type === 'הכנסה') {
+        typeParsed = 'income'
+      } else {
+        typeParsed = 'expense'
+      }
+    } else {
+      // In bank statement files: positive is deposit (income), negative is withdrawal (expense)
+      if (amountParsed > 0) {
+        typeParsed = 'income'
+      } else if (row.type === 'income' || row.type === 'הכנסה') {
+        typeParsed = 'income'
+      } else {
+        typeParsed = 'expense'
+      }
+    }
+
+    let dateParsed = row.transaction_date
+    if (forceBillingCycle) {
+      dateParsed = adjustDateToBillingCycle(row.transaction_date, targetYear, targetMonth, targetBillingDay)
+    }
+
+    return {
+      ...row,
+      amount: absoluteAmount,
+      type: typeParsed,
+      transaction_date: dateParsed,
+      original_date: row.original_date || row.transaction_date
+    }
+  })
+
+  const handleConfirmClick = () => {
+    onConfirm({
+      rows: previewRows,
+      billingDay: targetBillingDay,
+      month: targetMonth,
+      year: targetYear
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto" dir="rtl">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <div className="relative pp-glass rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] flex flex-col animate-slide-up shadow-2xl overflow-hidden" style={{ border: '1px solid rgba(0, 212, 255, 0.25)' }}>
+        <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-15 pointer-events-none bg-pp-cyan" style={{ transform: 'translate(40%, -40%)' }} aria-hidden="true" />
+
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/5 shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <Upload size={18} className="text-pp-cyan" />
+              אשף העלאת עסקאות
+            </h2>
+            <p className="text-xs text-pp-text-secondary mt-0.5">קובץ: {file?.name}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-pp-text-muted hover:text-white hover:bg-white/10 transition-all cursor-pointer">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-right">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3 p-4 rounded-xl bg-white/5 border border-white/5">
+              <h3 className="text-xs font-bold text-pp-cyan">הגדרות מחזור חיוב</h3>
+              
+              <div>
+                <label className="text-xs text-pp-text-secondary mb-1.5 block font-medium">יום החיוב</label>
+                <select
+                  value={targetBillingDay}
+                  onChange={e => setTargetBillingDay(Number(e.target.value))}
+                  className="pp-input w-full text-sm"
+                >
+                  <option value="1" className="bg-pp-card text-white">1 (קלנדרי)</option>
+                  <option value="10" className="bg-pp-card text-white">10 בחודש</option>
+                  <option value="15" className="bg-pp-card text-white">15 בחודש</option>
+                  <option value="25" className="bg-pp-card text-white">25 בחודש</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-pp-text-secondary mb-1.5 block font-medium">חודש יעד</label>
+                  <select
+                    value={targetMonth}
+                    onChange={e => setTargetMonth(Number(e.target.value))}
+                    className="pp-input w-full text-sm"
+                  >
+                    {HEBREW_MONTHS.map((m, idx) => (
+                      <option key={idx} value={idx} className="bg-pp-card text-white">{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-pp-text-secondary mb-1.5 block font-medium">שנת יעד</label>
+                  <select
+                    value={targetYear}
+                    onChange={e => setTargetYear(Number(e.target.value))}
+                    className="pp-input w-full text-sm"
+                  >
+                    {[year - 1, year, year + 1].map(y => (
+                      <option key={y} value={y} className="bg-pp-card text-white">{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input
+                  type="checkbox"
+                  id="forceBillingCycle"
+                  checked={forceBillingCycle}
+                  onChange={e => setForceBillingCycle(e.target.checked)}
+                  className="rounded border-white/20 bg-white/5 text-pp-cyan focus:ring-pp-cyan"
+                />
+                <label htmlFor="forceBillingCycle" className="text-xs text-pp-text-secondary cursor-pointer font-medium">
+                  שייך את כל העסקאות לחיוב החודשי הנבחר
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-3 p-4 rounded-xl bg-white/5 border border-white/5">
+              <h3 className="text-xs font-bold text-pp-cyan">הגדרות קורא קבצים</h3>
+
+              <div>
+                <label className="text-xs text-pp-text-secondary mb-1.5 block font-medium">סוג החשבון / קובץ</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFileType('credit')}
+                    className={`text-xs py-2 px-3 rounded-lg border transition-all ${
+                      fileType === 'credit'
+                        ? 'border-pp-cyan bg-pp-cyan/10 text-white font-bold'
+                        : 'border-white/10 hover:border-white/20 text-pp-text-secondary'
+                    }`}
+                  >
+                    כרטיס אשראי
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFileType('bank')}
+                    className={`text-xs py-2 px-3 rounded-lg border transition-all ${
+                      fileType === 'bank'
+                        ? 'border-pp-cyan bg-pp-cyan/10 text-white font-bold'
+                        : 'border-white/10 hover:border-white/20 text-pp-text-secondary'
+                    }`}
+                  >
+                    חשבון בנק
+                  </button>
+                </div>
+                <p className="text-[10px] text-pp-text-muted mt-2 leading-relaxed">
+                  {fileType === 'credit'
+                    ? '* בכרטיסי אשראי, סכומים חיוביים יפורשו כהוצאות וסכומים שליליים כזיכויים (הכנסות).'
+                    : '* בחשבון בנק, סכומים שליליים יפורשו כהוצאות וסכומים חיוביים כהכנסות.'
+                  }
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-xs font-bold text-pp-cyan flex items-center gap-1.5">
+              תצוגה מקדימה של עסקאות ({previewRows.length})
+            </h3>
+            <div className="border border-white/5 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+              <table className="w-full text-xs text-right border-collapse">
+                <thead>
+                  <tr className="bg-white/5 text-pp-text-secondary border-b border-white/5">
+                    <th className="p-2 font-semibold">תאריך</th>
+                    <th className="p-2 font-semibold">בית עסק</th>
+                    <th className="p-2 font-semibold text-left">סכום</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {previewRows.map((row, idx) => (
+                    <tr key={idx} className="hover:bg-white/5 transition-colors">
+                      <td className="p-2 text-pp-text-secondary font-numeric">
+                        {row.transaction_date}
+                        {forceBillingCycle && row.transaction_date !== row.original_date && (
+                          <span className="text-[10px] text-pp-amber block line-through">
+                            {row.original_date}
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-2 font-medium text-white truncate max-w-[150px]">{row.name}</td>
+                      <td className="p-2 font-bold text-left font-numeric" style={{ color: row.type === 'income' ? 'var(--pp-mint)' : 'var(--pp-coral)' }}>
+                        {row.type === 'income' ? '+' : '-'}{fmt(row.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-4 pt-3 border-t border-white/5 shrink-0">
+          <button onClick={onClose} className="flex-1 pp-btn-ghost text-sm py-2.5">
+            ביטול
+          </button>
+          <button
+            onClick={handleConfirmClick}
+            disabled={loading || previewRows.length === 0}
+            className="flex-1 pp-btn-primary text-sm py-2.5 flex items-center justify-center gap-2"
+            style={{ background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.7), rgba(0, 212, 255, 0.4))' }}
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            {loading ? 'מייבא עסקאות...' : 'אשר וייבא עסקאות'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────
 // Main Page
 // ─────────────────────────────────────────────
@@ -348,6 +660,7 @@ export default function Transactions() {
   const today = new Date()
   const [year, setYear]   = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth()) // 0-indexed
+  const [billingDay, setBillingDay] = useState(15)
 
   const [transactions, setTransactions] = useState([])
   const [allTx, setAllTx] = useState([]) // for charts (12 months)
@@ -361,7 +674,17 @@ export default function Transactions() {
   const [dragging, setDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadMsg, setUploadMsg] = useState(null)
+  const [uploadedFiles, setUploadedFiles] = useState([])
   const fileRef = useRef()
+
+  // Pre-upload wizard modal
+  const [pendingFile, setPendingFile] = useState(null)
+  const [pendingRows, setPendingRows] = useState([])
+  const [showUploadWizard, setShowUploadWizard] = useState(false)
+  const [wizardParsing, setWizardParsing] = useState(false)
+  const [wizardBillingDay, setWizardBillingDay] = useState(billingDay)
+  const [wizardTargetMonth, setWizardTargetMonth] = useState(month)
+  const [wizardTargetYear, setWizardTargetYear] = useState(year)
 
   // AI Chat
   const [chatHistory, setChatHistory] = useState([])
@@ -384,10 +707,8 @@ export default function Transactions() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // Current month
-      const from = `${year}-${String(month + 1).padStart(2,'0')}-01`
-      const toDate = new Date(year, month + 1, 0)
-      const to = `${year}-${String(month + 1).padStart(2,'0')}-${String(toDate.getDate()).padStart(2,'0')}`
+      // Current month range based on billing cycle
+      const { from, to } = getBillingRange(year, month, billingDay)
 
       const { data, error: e } = await supabase
         .from('transactions')
@@ -400,9 +721,9 @@ export default function Transactions() {
       if (e) throw e
       setTransactions(data || [])
 
-      // All 12 months for charts
-      const yearFrom = `${year}-01-01`
-      const yearTo   = `${year}-12-31`
+      // All 12 months for charts - cover full billing cycles range
+      const yearFrom = `${year - 1}-11-01`
+      const yearTo   = `${year + 1}-02-01`
       const { data: all } = await supabase
         .from('transactions')
         .select('*')
@@ -410,13 +731,30 @@ export default function Transactions() {
         .gte('transaction_date', yearFrom)
         .lte('transaction_date', yearTo)
       setAllTx(all || [])
+
+      // Fetch unique uploaded files
+      const { data: filesData, error: filesError } = await supabase
+        .from('transactions')
+        .select('source_file')
+        .eq('user_id', user.id)
+        .not('source_file', 'is', null)
+
+      if (!filesError && filesData) {
+        const counts = {}
+        filesData.forEach(t => {
+          if (t.source_file && t.source_file !== 'uploaded') {
+            counts[t.source_file] = (counts[t.source_file] || 0) + 1
+          }
+        })
+        setUploadedFiles(Object.entries(counts).map(([name, count]) => ({ name, count })))
+      }
     } catch (e) {
       setError('שגיאה בטעינת הנתונים. ודא שיצרת את טבלת transactions ב-Supabase.')
       console.error(e)
     } finally {
       setLoading(false)
     }
-  }, [year, month])
+  }, [year, month, billingDay])
 
   useEffect(() => { fetchTransactions() }, [fetchTransactions])
 
@@ -445,8 +783,8 @@ export default function Transactions() {
 
   // ── Bar chart: 12 months ─────────────────────
   const barData = HEBREW_MONTHS.map((name, i) => {
-    const mStr = String(i + 1).padStart(2,'0')
-    const monthTx = allTx.filter(t => t.transaction_date?.startsWith(`${year}-${mStr}`))
+    const { from, to } = getBillingRange(year, i, billingDay)
+    const monthTx = allTx.filter(t => t.transaction_date >= from && t.transaction_date <= to)
     return {
       name: name.slice(0,3),
       הכנסות: monthTx.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0),
@@ -474,7 +812,7 @@ export default function Transactions() {
         user_id: user.id,
         type: modal,
         name: form.name.trim(),
-        amount: parseFloat(form.amount),
+        amount: Math.abs(parseFloat(form.amount)),
         transaction_date: form.transaction_date,
       }, { onConflict: 'user_id,name,amount,transaction_date' })
       if (e) throw e
@@ -496,12 +834,17 @@ export default function Transactions() {
     setAllTx(prev => prev.filter(t => t.id !== id))
   }
 
-  // ── File upload ──────────────────────────────
-  const processFile = async (file) => {
-    setUploading(true)
+  // ── File upload — Step 1: Parse file and show wizard ──
+  const handleFileSelected = async (file) => {
     setUploadMsg(null)
+    setWizardParsing(true)
+    setShowUploadWizard(true)
+    setPendingFile(file)
+    setWizardBillingDay(billingDay)
+    setWizardTargetMonth(month)
+    setWizardTargetYear(year)
+
     try {
-      const { data: { user } } = await supabase.auth.getUser()
       let rows = []
 
       if (file.name.endsWith('.csv')) {
@@ -518,23 +861,59 @@ export default function Transactions() {
         rows = await parseTextToTransactions(rawText)
       } else {
         setUploadMsg({ type: 'error', text: 'סיומת קובץ לא נתמכת. יש להעלות קובצי CSV, XLSX או PDF.' })
-        setUploading(false)
+        setShowUploadWizard(false)
+        setPendingFile(null)
+        setWizardParsing(false)
         return
       }
 
       if (rows.length === 0) {
         setUploadMsg({ type: 'error', text: 'לא נמצאו עסקאות תקינות לפענוח בקובץ.' })
-        setUploading(false)
+        setShowUploadWizard(false)
+        setPendingFile(null)
+        setWizardParsing(false)
         return
       }
 
-      let imported = 0, duplicatesCount = 0, skipped = 0
+      // Map rows to raw fields for dynamic adjustment in wizard
+      const rawRows = rows.map(row => {
+        return {
+          name: row.name.trim(),
+          amount: parseFloat(row.amount) || 0,
+          transaction_date: row.transaction_date,
+          original_date: row.transaction_date,
+          type: row.type || 'expense'
+        }
+      })
+
+      setPendingRows(rawRows)
+    } catch (e) {
+      console.error(e)
+      setUploadMsg({ type: 'error', text: 'שגיאה בפענוח הקובץ: ' + e.message })
+      setShowUploadWizard(false)
+      setPendingFile(null)
+    } finally {
+      setWizardParsing(false)
+    }
+  }
+
+  // ── File upload — Step 2: Confirm and import ──
+  const confirmUpload = async ({ rows, billingDay: chosenBillingDay, month: chosenMonth, year: chosenYear }) => {
+    setUploading(true)
+    setShowUploadWizard(false)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const toUpsert = []
+      let duplicatesCount = 0
+
       for (const row of rows) {
-        // Check local year's transaction list for exact duplicates before pushing to Supabase
-        const isDuplicate = allTx.some(t => 
+        // Check local year's transaction list for exact duplicates
+        const isDuplicate = allTx.some(t =>
           t.transaction_date === row.transaction_date &&
           t.name.trim().toLowerCase() === row.name.trim().toLowerCase() &&
-          Math.abs(Number(t.amount) - parseFloat(row.amount)) < 0.01
+          Math.abs(Number(t.amount) - row.amount) < 0.01
         )
 
         if (isDuplicate) {
@@ -542,17 +921,24 @@ export default function Transactions() {
           continue
         }
 
-        const { error: e } = await supabase.from('transactions').upsert({
+        toUpsert.push({
           user_id: user.id,
-          type: row.type === 'income' ? 'income' : 'expense',
-          name: row.name.trim(),
-          amount: parseFloat(row.amount),
+          type: row.type,
+          name: row.name,
+          amount: row.amount,
           transaction_date: row.transaction_date,
-          source_file: file.name,
-        }, { onConflict: 'user_id,name,amount,transaction_date', ignoreDuplicates: true })
+          source_file: pendingFile?.name || 'uploaded',
+        })
+      }
 
-        if (e) { console.error('Upsert failed for row:', row, e); skipped++ }
-        else imported++
+      let imported = 0
+      if (toUpsert.length > 0) {
+        const { error: e } = await supabase
+          .from('transactions')
+          .upsert(toUpsert, { onConflict: 'user_id,name,amount,transaction_date', ignoreDuplicates: true })
+
+        if (e) throw e
+        imported = toUpsert.length
       }
 
       if (imported === 0 && duplicatesCount > 0) {
@@ -563,12 +949,50 @@ export default function Transactions() {
         setUploadMsg({ type: 'success', text: `יובאו בהצלחה ${imported} עסקאות מתוך ${rows.length}.` })
       }
 
+      // Update billing day
+      if (chosenBillingDay !== billingDay) {
+        setBillingDay(chosenBillingDay)
+      }
+      // Navigate to target billing cycle month/year
+      setMonth(chosenMonth)
+      setYear(chosenYear)
+
       await fetchTransactions()
     } catch (e) {
       console.error(e)
-      setUploadMsg({ type: 'error', text: 'שגיאה בפענוח ועיבוד הקובץ: ' + e.message })
+      setUploadMsg({ type: 'error', text: 'שגיאה בעיבוד הקובץ: ' + e.message })
     } finally {
       setUploading(false)
+      setPendingFile(null)
+      setPendingRows([])
+    }
+  }
+
+  const cancelUpload = () => {
+    setShowUploadWizard(false)
+    setPendingFile(null)
+    setPendingRows([])
+  }
+
+  // ── Delete uploaded file ─────────────────────
+  const handleDeleteFile = async (fileName, count) => {
+    if (!window.confirm(`האם אתה בטוח שברצונך למחוק את כל ${count} העסקאות שיובאו מהקובץ "${fileName}"?`)) return
+    try {
+      setLoading(true)
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('source_file', fileName)
+
+      if (error) throw error
+
+      // Reload data
+      await fetchTransactions()
+    } catch (e) {
+      console.error(e)
+      alert('שגיאה במחיקת הקובץ: ' + e.message)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -576,7 +1000,7 @@ export default function Transactions() {
     e.preventDefault()
     setDragging(false)
     const file = e.dataTransfer.files[0]
-    if (file) processFile(file)
+    if (file) handleFileSelected(file)
   }
 
   // ── AI Chat ──────────────────────────────────
@@ -622,26 +1046,43 @@ export default function Transactions() {
           <p className="text-pp-text-secondary text-sm mt-0.5">ניהול הכנסות, הוצאות ותנועות כספיות</p>
         </div>
 
-        {/* Month navigator */}
-        <div className="flex items-center gap-2 pp-glass rounded-2xl px-4 py-2.5 self-start sm:self-auto">
-          <button
-            onClick={nextMonth}
-            disabled={isFutureDisabled}
-            aria-label="חודש הבא"
-            className="p-1.5 rounded-lg hover:bg-white/10 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft size={16} className="text-pp-text-secondary" />
-          </button>
-          <span className="text-white font-semibold text-sm min-w-[120px] text-center">
-            {HEBREW_MONTHS[month]} {year}
-          </span>
-          <button
-            onClick={prevMonth}
-            aria-label="חודש קודם"
-            className="p-1.5 rounded-lg hover:bg-white/10 transition-all cursor-pointer"
-          >
-            <ChevronRight size={16} className="text-pp-text-secondary" />
-          </button>
+        <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+          {/* Billing Day Selector */}
+          <div className="flex items-center gap-2 pp-glass rounded-2xl px-3 py-2 text-xs text-pp-text-secondary">
+            <span>יום החיוב:</span>
+            <select
+              value={billingDay}
+              onChange={e => setBillingDay(Number(e.target.value))}
+              className="bg-transparent text-white border-none outline-none font-semibold cursor-pointer py-0.5"
+            >
+              <option value="1" className="bg-pp-card text-white">1 (קלנדרי)</option>
+              <option value="10" className="bg-pp-card text-white">10 בחודש</option>
+              <option value="15" className="bg-pp-card text-white">15 בחודש</option>
+              <option value="25" className="bg-pp-card text-white">25 בחודש</option>
+            </select>
+          </div>
+
+          {/* Month navigator */}
+          <div className="flex items-center gap-2 pp-glass rounded-2xl px-4 py-2.5">
+            <button
+              onClick={nextMonth}
+              disabled={isFutureDisabled}
+              aria-label="חודש הבא"
+              className="p-1.5 rounded-lg hover:bg-white/10 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft size={16} className="text-pp-text-secondary" />
+            </button>
+            <span className="text-white font-semibold text-sm min-w-[120px] text-center">
+              {HEBREW_MONTHS[month]} {year}
+            </span>
+            <button
+              onClick={prevMonth}
+              aria-label="חודש קודם"
+              className="p-1.5 rounded-lg hover:bg-white/10 transition-all cursor-pointer"
+            >
+              <ChevronRight size={16} className="text-pp-text-secondary" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -820,7 +1261,7 @@ export default function Transactions() {
           type="file"
           accept=".csv,.xlsx,.pdf"
           className="hidden"
-          onChange={e => e.target.files[0] && processFile(e.target.files[0])}
+          onChange={e => { if (e.target.files[0]) { handleFileSelected(e.target.files[0]); e.target.value = '' } }}
           aria-hidden="true"
         />
 
@@ -867,6 +1308,37 @@ export default function Transactions() {
           </div>
         )}
       </div>
+
+      {/* ── Uploaded Files List ── */}
+      {uploadedFiles.length > 0 && (
+        <div className="pp-glass rounded-2xl p-5 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <FileText size={16} className="text-pp-cyan animate-pulse" />
+            <h2 className="text-sm font-semibold text-white">קבצים מרוכזים שהועלו</h2>
+          </div>
+          <p className="text-[11px] text-pp-text-muted">באפשרותך למחוק קובץ שלם כדי להסיר את כל העסקאות שייובאו ממנו בבת אחת.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+            {uploadedFiles.map(file => (
+              <div key={file.name} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all group">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText size={14} className="text-pp-cyan/70 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-white truncate" title={file.name}>{file.name}</p>
+                    <p className="text-[10px] text-pp-text-muted mt-0.5">{file.count} עסקאות</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleDeleteFile(file.name, file.count)}
+                  aria-label={`מחק קובץ ${file.name}`}
+                  className="p-1.5 rounded-lg text-pp-text-muted hover:text-pp-coral hover:bg-pp-coral/10 transition-all cursor-pointer opacity-0 group-hover:opacity-100"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── AI Financial Advisor ── */}
       <div className="pp-glass rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(124,111,255,0.2)' }}>
@@ -979,6 +1451,21 @@ export default function Transactions() {
           onSave={handleSave}
           loading={saving}
           existingTransactions={transactions}
+        />
+      )}
+
+      {/* ── Upload Wizard Modal ── */}
+      {showUploadWizard && (
+        <UploadWizardModal
+          file={pendingFile}
+          rows={pendingRows}
+          onClose={cancelUpload}
+          onConfirm={confirmUpload}
+          loading={uploading}
+          parsing={wizardParsing}
+          billingDay={billingDay}
+          month={month}
+          year={year}
         />
       )}
     </div>
