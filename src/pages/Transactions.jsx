@@ -22,59 +22,24 @@ const HEBREW_MONTHS = [
 
 const fmt = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { maximumFractionDigits: 0 })}`
 
-// Helper to get date range for a given month/year and billing day
-const getBillingRange = (year, month, billingDay) => {
-  if (billingDay === 1) {
-    const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
-    const toDate = new Date(year, month + 1, 0)
-    const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`
-    return { from, to }
-  } else {
-    // Previous month starts on billingDay + 1
-    const fromDate = new Date(year, month - 1, billingDay + 1)
-    // Selected month ends on billingDay
-    const toDate = new Date(year, month, billingDay)
-    
-    const fromY = fromDate.getFullYear()
-    const fromM = String(fromDate.getMonth() + 1).padStart(2, '0')
-    const fromD = String(fromDate.getDate()).padStart(2, '0')
-    
-    const toY = toDate.getFullYear()
-    const toM = String(toDate.getMonth() + 1).padStart(2, '0')
-    const toD = String(toDate.getDate()).padStart(2, '0')
-    
-    return {
-      from: `${fromY}-${fromM}-${fromD}`,
-      to: `${toY}-${toM}-${toD}`
-    }
-  }
+// Helper to get date range for a given month/year (strictly calendar-based)
+const getBillingRange = (year, month) => {
+  const from = `${year}-${String(month + 1).padStart(2, '0')}-01`
+  const toDate = new Date(year, month + 1, 0)
+  const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`
+  return { from, to }
 }
 
-const adjustDateToBillingCycle = (originalDateStr, targetYear, targetMonth, billingDay) => {
+const adjustDateToCalendarMonth = (originalDateStr, targetYear, targetMonth) => {
   const d = new Date(originalDateStr)
   if (isNaN(d.getTime())) return originalDateStr
   const originalDay = d.getDate()
   
-  let year = targetYear
-  let month = targetMonth // 0-indexed
-  
-  if (billingDay > 1) {
-    if (originalDay > billingDay) {
-      // Belongs to the previous month's portion of the cycle
-      const prev = new Date(targetYear, targetMonth - 1, 1)
-      year = prev.getFullYear()
-      month = prev.getMonth()
-    } else {
-      // Belongs to the target month's portion
-      year = targetYear
-      month = targetMonth
-    }
-  }
-  
-  const lastDayOfTarget = new Date(year, month + 1, 0).getDate()
+  // Get last day of target month to cap day if needed (e.g. 31st to 30th)
+  const lastDayOfTarget = new Date(targetYear, targetMonth + 1, 0).getDate()
   const finalDay = Math.min(originalDay, lastDayOfTarget)
   
-  const finalDate = new Date(year, month, finalDay)
+  const finalDate = new Date(targetYear, targetMonth, finalDay)
   const y = finalDate.getFullYear()
   const m = String(finalDate.getMonth() + 1).padStart(2, '0')
   const dayStr = String(finalDate.getDate()).padStart(2, '0')
@@ -412,10 +377,9 @@ const UploadWizardModal = ({
   month,
   year
 }) => {
-  const [targetBillingDay, setTargetBillingDay] = useState(billingDay)
   const [targetMonth, setTargetMonth] = useState(month)
   const [targetYear, setTargetYear] = useState(year)
-  const [forceBillingCycle, setForceBillingCycle] = useState(true)
+  const [forceCalendarMonth, setForceCalendarMonth] = useState(true)
   const [fileType, setFileType] = useState('credit') // 'credit' | 'bank'
 
   if (parsing) {
@@ -458,8 +422,8 @@ const UploadWizardModal = ({
     }
 
     let dateParsed = row.transaction_date
-    if (forceBillingCycle) {
-      dateParsed = adjustDateToBillingCycle(row.transaction_date, targetYear, targetMonth, targetBillingDay)
+    if (forceCalendarMonth) {
+      dateParsed = adjustDateToCalendarMonth(row.transaction_date, targetYear, targetMonth)
     }
 
     return {
@@ -474,7 +438,6 @@ const UploadWizardModal = ({
   const handleConfirmClick = () => {
     onConfirm({
       rows: previewRows,
-      billingDay: targetBillingDay,
       month: targetMonth,
       year: targetYear
     })
@@ -502,22 +465,8 @@ const UploadWizardModal = ({
         <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-right">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-3 p-4 rounded-xl bg-white/5 border border-white/5">
-              <h3 className="text-xs font-bold text-pp-cyan">הגדרות מחזור חיוב</h3>
+              <h3 className="text-xs font-bold text-pp-cyan">הגדרות שיוך תאריכים</h3>
               
-              <div>
-                <label className="text-xs text-pp-text-secondary mb-1.5 block font-medium">יום החיוב</label>
-                <select
-                  value={targetBillingDay}
-                  onChange={e => setTargetBillingDay(Number(e.target.value))}
-                  className="pp-input w-full text-sm"
-                >
-                  <option value="1" className="bg-pp-card text-white">1 (קלנדרי)</option>
-                  <option value="10" className="bg-pp-card text-white">10 בחודש</option>
-                  <option value="15" className="bg-pp-card text-white">15 בחודש</option>
-                  <option value="25" className="bg-pp-card text-white">25 בחודש</option>
-                </select>
-              </div>
-
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-pp-text-secondary mb-1.5 block font-medium">חודש יעד</label>
@@ -548,13 +497,13 @@ const UploadWizardModal = ({
               <div className="flex items-center gap-2 pt-2">
                 <input
                   type="checkbox"
-                  id="forceBillingCycle"
-                  checked={forceBillingCycle}
-                  onChange={e => setForceBillingCycle(e.target.checked)}
+                  id="forceCalendarMonth"
+                  checked={forceCalendarMonth}
+                  onChange={e => setForceCalendarMonth(e.target.checked)}
                   className="rounded border-white/20 bg-white/5 text-pp-cyan focus:ring-pp-cyan"
                 />
-                <label htmlFor="forceBillingCycle" className="text-xs text-pp-text-secondary cursor-pointer font-medium">
-                  שייך את כל העסקאות לחיוב החודשי הנבחר
+                <label htmlFor="forceCalendarMonth" className="text-xs text-pp-text-secondary cursor-pointer font-medium">
+                  שייך את כל העסקאות לחודש הקלנדרי הנבחר
                 </label>
               </div>
             </div>
@@ -616,7 +565,7 @@ const UploadWizardModal = ({
                     <tr key={idx} className="hover:bg-white/5 transition-colors">
                       <td className="p-2 text-pp-text-secondary font-numeric">
                         {row.transaction_date}
-                        {forceBillingCycle && row.transaction_date !== row.original_date && (
+                        {forceCalendarMonth && row.transaction_date !== row.original_date && (
                           <span className="text-[10px] text-pp-amber block line-through">
                             {row.original_date}
                           </span>
@@ -660,7 +609,6 @@ export default function Transactions() {
   const today = new Date()
   const [year, setYear]   = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth()) // 0-indexed
-  const [billingDay, setBillingDay] = useState(15)
 
   const [transactions, setTransactions] = useState([])
   const [allTx, setAllTx] = useState([]) // for charts (12 months)
@@ -682,7 +630,6 @@ export default function Transactions() {
   const [pendingRows, setPendingRows] = useState([])
   const [showUploadWizard, setShowUploadWizard] = useState(false)
   const [wizardParsing, setWizardParsing] = useState(false)
-  const [wizardBillingDay, setWizardBillingDay] = useState(billingDay)
   const [wizardTargetMonth, setWizardTargetMonth] = useState(month)
   const [wizardTargetYear, setWizardTargetYear] = useState(year)
 
@@ -708,7 +655,7 @@ export default function Transactions() {
       if (!user) return
 
       // Current month range based on billing cycle
-      const { from, to } = getBillingRange(year, month, billingDay)
+      const { from, to } = getBillingRange(year, month)
 
       const { data, error: e } = await supabase
         .from('transactions')
@@ -754,7 +701,7 @@ export default function Transactions() {
     } finally {
       setLoading(false)
     }
-  }, [year, month, billingDay])
+  }, [year, month])
 
   useEffect(() => { fetchTransactions() }, [fetchTransactions])
 
@@ -842,7 +789,6 @@ export default function Transactions() {
     setWizardParsing(true)
     setShowUploadWizard(true)
     setPendingFile(file)
-    setWizardBillingDay(billingDay)
     setWizardTargetMonth(month)
     setWizardTargetYear(year)
 
@@ -900,7 +846,7 @@ export default function Transactions() {
   }
 
   // ── File upload — Step 2: Confirm and import ──
-  const confirmUpload = async ({ rows, billingDay: chosenBillingDay, month: chosenMonth, year: chosenYear }) => {
+  const confirmUpload = async ({ rows, month: chosenMonth, year: chosenYear }) => {
     setUploading(true)
     setShowUploadWizard(false)
     try {
@@ -951,10 +897,6 @@ export default function Transactions() {
         setUploadMsg({ type: 'success', text: `יובאו בהצלחה ${imported} עסקאות מתוך ${rows.length}.` })
       }
 
-      // Update billing day
-      if (chosenBillingDay !== billingDay) {
-        setBillingDay(chosenBillingDay)
-      }
       // Navigate to target billing cycle month/year
       setMonth(chosenMonth)
       setYear(chosenYear)
@@ -1049,21 +991,6 @@ export default function Transactions() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
-          {/* Billing Day Selector */}
-          <div className="flex items-center gap-2 pp-glass rounded-2xl px-3 py-2 text-xs text-pp-text-secondary">
-            <span>יום החיוב:</span>
-            <select
-              value={billingDay}
-              onChange={e => setBillingDay(Number(e.target.value))}
-              className="bg-transparent text-white border-none outline-none font-semibold cursor-pointer py-0.5"
-            >
-              <option value="1" className="bg-pp-card text-white">1 (קלנדרי)</option>
-              <option value="10" className="bg-pp-card text-white">10 בחודש</option>
-              <option value="15" className="bg-pp-card text-white">15 בחודש</option>
-              <option value="25" className="bg-pp-card text-white">25 בחודש</option>
-            </select>
-          </div>
-
           {/* Month navigator */}
           <div className="flex items-center gap-2 pp-glass rounded-2xl px-4 py-2.5">
             <button
@@ -1465,7 +1392,6 @@ export default function Transactions() {
           onConfirm={confirmUpload}
           loading={uploading}
           parsing={wizardParsing}
-          billingDay={billingDay}
           month={month}
           year={year}
         />
