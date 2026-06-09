@@ -212,7 +212,7 @@ const TxRow = ({ tx, onDelete }) => (
 )
 
 // Add Transaction Modal
-const AddModal = ({ type, onClose, onSave, loading }) => {
+const AddModal = ({ type, onClose, onSave, loading, existingTransactions }) => {
   const [form, setForm] = useState({
     name: '',
     amount: '',
@@ -222,6 +222,24 @@ const AddModal = ({ type, onClose, onSave, loading }) => {
   const isIncome = type === 'income'
   const accentColor = isIncome ? 'var(--pp-mint)' : 'var(--pp-coral)'
   const label = isIncome ? 'הכנסה' : 'הוצאה'
+
+  // Check for duplicate dynamically based on date and amount
+  const possibleDuplicate = existingTransactions?.find(t => 
+    t.transaction_date === form.transaction_date &&
+    Math.abs(Number(t.amount) - parseFloat(form.amount || '0')) < 0.01
+  )
+
+  const isExactDuplicate = possibleDuplicate && 
+    possibleDuplicate.name.trim().toLowerCase() === form.name.trim().toLowerCase()
+
+  const handleAddClick = () => {
+    if (isExactDuplicate) {
+      if (!window.confirm('שים לב: כבר קיימת עסקה זהה לחלוטין. האם ברצונך להוסיף אותה בכל זאת?')) {
+        return
+      }
+    }
+    onSave(form)
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" dir="rtl">
@@ -283,6 +301,24 @@ const AddModal = ({ type, onClose, onSave, loading }) => {
           </div>
         </div>
 
+        {/* Real-time duplicate warning */}
+        {possibleDuplicate && (
+          <div className="mt-4 p-3 rounded-xl border border-pp-amber/30 bg-pp-amber/10 flex items-start gap-2.5 text-xs text-pp-amber relative z-10 animate-fade-in text-right">
+            <AlertCircle size={14} className="shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">{isExactDuplicate ? 'נמצאה עסקה זהה לחלוטין' : 'נמצאה עסקה דומה בתאריך זה'}</p>
+              <p className="mt-0.5 leading-relaxed">
+                {isExactDuplicate 
+                  ? `כבר קיימת עסקה בשם "${possibleDuplicate.name}" בסכום זהה בתאריך שנבחר.`
+                  : `כבר קיימת עסקה בשם "${possibleDuplicate.name}" בסכום של ₪${Number(possibleDuplicate.amount).toLocaleString('he-IL')} בתאריך שנבחר.`
+                }
+                <br />
+                אנא ודא שאין זו כפילות.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2 mt-6 relative z-10">
           <button
             onClick={onClose}
@@ -291,7 +327,7 @@ const AddModal = ({ type, onClose, onSave, loading }) => {
             ביטול
           </button>
           <button
-            onClick={() => onSave(form)}
+            onClick={handleAddClick}
             disabled={loading || !form.name || !form.amount}
             className="flex-1 pp-btn-primary text-sm py-2.5 flex items-center justify-center gap-2"
             style={{ background: `linear-gradient(135deg, ${accentColor}CC, ${accentColor}88)` }}
@@ -492,8 +528,20 @@ export default function Transactions() {
         return
       }
 
-      let imported = 0, skipped = 0
+      let imported = 0, duplicatesCount = 0, skipped = 0
       for (const row of rows) {
+        // Check local year's transaction list for exact duplicates before pushing to Supabase
+        const isDuplicate = allTx.some(t => 
+          t.transaction_date === row.transaction_date &&
+          t.name.trim().toLowerCase() === row.name.trim().toLowerCase() &&
+          Math.abs(Number(t.amount) - parseFloat(row.amount)) < 0.01
+        )
+
+        if (isDuplicate) {
+          duplicatesCount++
+          continue
+        }
+
         const { error: e } = await supabase.from('transactions').upsert({
           user_id: user.id,
           type: row.type === 'income' ? 'income' : 'expense',
@@ -502,11 +550,19 @@ export default function Transactions() {
           transaction_date: row.transaction_date,
           source_file: file.name,
         }, { onConflict: 'user_id,name,amount,transaction_date', ignoreDuplicates: true })
+
         if (e) { console.error('Upsert failed for row:', row, e); skipped++ }
         else imported++
       }
 
-      setUploadMsg({ type: 'success', text: `יובאו בהצלחה ${imported} רשומות מתוך ${rows.length}. כפילויות דולגו אוטומטית.` })
+      if (imported === 0 && duplicatesCount > 0) {
+        setUploadMsg({ type: 'success', text: `כל ${duplicatesCount} העסקאות בקובץ כבר קיימות במערכת (הכפילויות דולגו).` })
+      } else if (duplicatesCount > 0) {
+        setUploadMsg({ type: 'success', text: `יובאו בהצלחה ${imported} עסקאות חדשות. ${duplicatesCount} כפילויות דולגו אוטומטית.` })
+      } else {
+        setUploadMsg({ type: 'success', text: `יובאו בהצלחה ${imported} עסקאות מתוך ${rows.length}.` })
+      }
+
       await fetchTransactions()
     } catch (e) {
       console.error(e)
@@ -922,6 +978,7 @@ export default function Transactions() {
           onClose={() => setModal(null)}
           onSave={handleSave}
           loading={saving}
+          existingTransactions={transactions}
         />
       )}
     </div>
