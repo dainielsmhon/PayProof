@@ -1,8 +1,8 @@
-// SUPABASE_READY: subscriptions (currently LocalStorage)
-import { useState } from 'react'
-import { useLocalStorage } from '../hooks/useLocalStorage'
+// SUPABASE_READY: subscriptions
+import { useState, useEffect } from 'react'
+import { supabase } from '../supabaseClient'
 import { formatDate, getDaysRemaining, getStatusBadgeClass } from '../utils/dateUtils'
-import { Plus, Edit, Trash2, X, CreditCard, Search, Calendar, DollarSign } from 'lucide-react'
+import { Plus, Edit, Trash2, X, CreditCard, Search, Calendar, DollarSign, Loader2 } from 'lucide-react'
 
 const EMPTY_FORM = {
   name: '', price: '', startDate: '', renewalDate: '', status: 'Active'
@@ -18,11 +18,45 @@ const StatusBadge = ({ daysRemaining }) => {
 }
 
 const Subscriptions = () => {
-  const [subscriptions, setSubscriptions] = useLocalStorage('subscriptions', [])
+  const [subscriptions, setSubscriptions] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState(null)
+  const [isSaving, setIsSaving] = useState(false)
+  
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [formData, setFormData] = useState(EMPTY_FORM)
   const [searchTerm, setSearchTerm] = useState('')
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user)
+      if (user) fetchSubscriptions(user.id)
+      else setLoading(false)
+    })
+  }, [])
+
+  const fetchSubscriptions = async (userId) => {
+    try {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('name', { ascending: true })
+      if (error) throw error
+      const formatted = (data || []).map(s => ({
+        ...s,
+        startDate: s.start_date || '',
+        renewalDate: s.renewal_date || ''
+      }))
+      setSubscriptions(formatted)
+    } catch (e) {
+      console.error('שגיאה בשליפת מנויים:', e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const filtered = subscriptions.filter(s =>
     s.name?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -38,19 +72,52 @@ const Subscriptions = () => {
     setIsModalOpen(false); setEditingId(null); setFormData(EMPTY_FORM)
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    if (editingId) {
-      setSubscriptions(subscriptions.map(s => s.id === editingId ? { ...formData, id: editingId } : s))
-    } else {
-      setSubscriptions([...subscriptions, { ...formData, id: Date.now().toString(), price: parseFloat(formData.price) || 0 }])
+    if (!user) return
+    setIsSaving(true)
+    try {
+      const payload = {
+        user_id: user.id,
+        name: formData.name.trim(),
+        price: parseFloat(formData.price) || 0,
+        start_date: formData.startDate || null,
+        renewal_date: formData.renewalDate,
+        status: formData.status,
+      }
+      
+      if (editingId) {
+        const { error } = await supabase
+          .from('subscriptions')
+          .update(payload)
+          .eq('id', editingId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('subscriptions')
+          .insert([payload])
+        if (error) throw error
+      }
+      handleCloseModal()
+      await fetchSubscriptions(user.id)
+    } catch (err) {
+      alert('שגיאה בשמירת המנוי: ' + err.message)
+    } finally {
+      setIsSaving(false)
     }
-    handleCloseModal()
   }
 
-  const handleDelete = (id) => {
-    if (window.confirm('האם למחוק מנוי זה?')) {
-      setSubscriptions(subscriptions.filter(s => s.id !== id))
+  const handleDelete = async (id) => {
+    if (!window.confirm('האם למחוק מנוי זה?')) return
+    try {
+      const { error } = await supabase
+        .from('subscriptions')
+        .delete()
+        .eq('id', id)
+      if (error) throw error
+      setSubscriptions(prev => prev.filter(s => s.id !== id))
+    } catch (err) {
+      alert('שגיאה במחיקת המנוי: ' + err.message)
     }
   }
 
@@ -105,8 +172,13 @@ const Subscriptions = () => {
         </div>
       )}
 
-      {/* Empty State */}
-      {subscriptions.length === 0 ? (
+      {/* Loader & Empty States */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <Loader2 size={36} className="animate-spin text-pp-cyan mb-4" />
+          <p className="text-pp-text-secondary text-sm font-medium">טוען מנויים מהשרת...</p>
+        </div>
+      ) : subscriptions.length === 0 ? (
         <div className="pp-glass-card flex flex-col items-center justify-center py-16 text-center animate-slide-up">
           <div className="w-16 h-16 rounded-2xl bg-pp-cyan/10 border border-pp-cyan/20 flex items-center justify-center mb-4 animate-float" aria-hidden="true">
             <CreditCard size={30} className="text-pp-cyan" />

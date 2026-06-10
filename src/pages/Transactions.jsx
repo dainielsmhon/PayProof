@@ -365,6 +365,42 @@ const AddModal = ({ type, onClose, onSave, loading, existingTransactions }) => {
   )
 }
 
+// Parsing loader with simulated progress bar
+const ParsingLoader = ({ onClose }) => {
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setProgress(p => {
+        if (p >= 95) return p
+        const diff = Math.max(1, (95 - p) * 0.08)
+        return Math.min(95, p + diff)
+      })
+    }, 150)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <div className="relative pp-glass rounded-2xl p-8 w-full max-w-sm flex flex-col items-center justify-center text-center animate-slide-up shadow-2xl" style={{ border: '1px solid rgba(0, 212, 255, 0.25)' }}>
+        <Loader2 size={36} className="animate-spin text-pp-cyan mb-4" />
+        <h2 className="text-base font-bold text-white mb-2">מנתח ומעבד את הקובץ...</h2>
+        <p className="text-xs text-pp-text-muted leading-relaxed mb-4">אנא המתן, סורק עסקאות ומחלץ נתונים בעזרת מנוע AI</p>
+        
+        {/* Progress Bar */}
+        <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden relative mb-2">
+          <div 
+            className="bg-pp-cyan h-full rounded-full transition-all duration-300 ease-out" 
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <span className="text-[11px] font-bold text-pp-cyan font-numeric">{Math.round(progress)}%</span>
+      </div>
+    </div>
+  )
+}
+
 // ── Upload Wizard Modal Component ──
 const UploadWizardModal = ({
   file,
@@ -373,9 +409,9 @@ const UploadWizardModal = ({
   onConfirm,
   loading,
   parsing,
-  billingDay,
   month,
-  year
+  year,
+  existingTransactions
 }) => {
   const [targetMonth, setTargetMonth] = useState(month)
   const [targetYear, setTargetYear] = useState(year)
@@ -383,16 +419,7 @@ const UploadWizardModal = ({
   const [fileType, setFileType] = useState('credit') // 'credit' | 'bank'
 
   if (parsing) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" dir="rtl">
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
-        <div className="relative pp-glass rounded-2xl p-8 w-full max-w-sm flex flex-col items-center justify-center text-center animate-slide-up shadow-2xl" style={{ border: '1px solid rgba(0, 212, 255, 0.25)' }}>
-          <Loader2 size={36} className="animate-spin text-pp-cyan mb-4" />
-          <h2 className="text-base font-bold text-white mb-2">מנתח ומעבד את הקובץ...</h2>
-          <p className="text-xs text-pp-text-muted leading-relaxed">אנא המתן, סורק עסקאות ומחלץ נתונים בעזרת מנוע AI</p>
-        </div>
-      </div>
-    )
+    return <ParsingLoader onClose={onClose} />
   }
 
   // Calculate adjusted rows preview
@@ -426,12 +453,21 @@ const UploadWizardModal = ({
       dateParsed = adjustDateToCalendarMonth(row.transaction_date, targetYear, targetMonth)
     }
 
+    // Check if duplicate of already imported database transactions
+    const isDuplicate = existingTransactions?.some(t =>
+      t.transaction_date === dateParsed &&
+      t.name.trim().toLowerCase() === row.name.trim().toLowerCase() &&
+      Math.abs(Number(t.amount) - absoluteAmount) < 0.01 &&
+      t.type === typeParsed
+    )
+
     return {
       ...row,
       amount: absoluteAmount,
       type: typeParsed,
       transaction_date: dateParsed,
-      original_date: row.original_date || row.transaction_date
+      original_date: row.original_date || row.transaction_date,
+      isDuplicate
     }
   })
 
@@ -562,7 +598,10 @@ const UploadWizardModal = ({
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {previewRows.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-white/5 transition-colors">
+                    <tr 
+                      key={idx} 
+                      className={`hover:bg-white/5 transition-colors ${row.isDuplicate ? 'opacity-40 bg-pp-amber/5' : ''}`}
+                    >
                       <td className="p-2 text-pp-text-secondary font-numeric">
                         {row.transaction_date}
                         {forceCalendarMonth && row.transaction_date !== row.original_date && (
@@ -571,7 +610,19 @@ const UploadWizardModal = ({
                           </span>
                         )}
                       </td>
-                      <td className="p-2 font-medium text-white truncate max-w-[150px]">{row.name}</td>
+                      <td className="p-2 font-medium text-white truncate max-w-[150px]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">{row.name}</span>
+                          {row.isDuplicate && (
+                            <span 
+                              className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-pp-amber/20 text-pp-amber border border-pp-amber/30 shrink-0"
+                              title="עסקה זו כבר קיימת במערכת ותדולג במהלך הייבוא"
+                            >
+                              כפילות (תדולג)
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="p-2 font-bold text-left font-numeric" style={{ color: row.type === 'income' ? 'var(--pp-mint)' : 'var(--pp-coral)' }}>
                         {row.type === 'income' ? '+' : '-'}{fmt(row.amount)}
                       </td>
@@ -1067,9 +1118,9 @@ export default function Transactions() {
                 <Pie
                   data={pieData}
                   cx="50%"
-                  cy="48%"
-                  innerRadius={55}
-                  outerRadius={85}
+                  cy="40%"
+                  innerRadius={45}
+                  outerRadius={70}
                   paddingAngle={3}
                   dataKey="value"
                 >
@@ -1394,6 +1445,7 @@ export default function Transactions() {
           parsing={wizardParsing}
           month={month}
           year={year}
+          existingTransactions={allTx}
         />
       )}
     </div>

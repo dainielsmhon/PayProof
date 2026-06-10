@@ -87,7 +87,7 @@ const SkeletonCard = () => (
 )
 
 const Dashboard = () => {
-  const [subscriptions] = useLocalStorage('subscriptions', [])
+  const [subscriptions, setSubscriptions] = useState([])
   const [warranties, setWarranties] = useState([])
   const [loading, setLoading] = useState(true)
   const [userName, setUserName] = useState('דניאל')
@@ -128,6 +128,15 @@ const Dashboard = () => {
         const { data: wData } = await supabase
           .from('warranties').select('*').eq('user_id', user.id)
         setWarranties(wData || [])
+
+        const { data: sData } = await supabase
+          .from('subscriptions').select('*').eq('user_id', user.id)
+        const formatted = (sData || []).map(s => ({
+          ...s,
+          renewalDate: s.renewal_date,
+          startDate: s.start_date
+        }))
+        setSubscriptions(formatted)
       }
       setLoading(false)
     }
