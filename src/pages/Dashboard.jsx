@@ -6,9 +6,14 @@ import { getDaysRemaining, getStatusColor, formatDate } from '../utils/dateUtils
 import {
   AlertCircle, TrendingUp, Bell, CreditCard, Sparkles,
   Send, Loader2, Shield, FileText, ArrowLeft, ChevronLeft,
-  Sun, Moon, Coffee, Zap, RotateCcw
+  Sun, Moon, Coffee, Zap, RotateCcw, Scale
 } from 'lucide-react'
 import { askGeminiAgent } from '../lib/gemini'
+
+const HEBREW_MONTHS = [
+  'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+  'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+]
 
 // Helper: greeting based on time
 const getGreeting = () => {
@@ -47,6 +52,66 @@ const StatCard = ({ icon: Icon, label, value, sub, color, delay = 0 }) => (
     </div>
   </div>
 )
+
+// Monthly Balance Card Component
+const BalanceCard = ({ income, expense, balance, monthName, delay = 0 }) => {
+  const isPositive = balance >= 0
+  const balanceColor = isPositive ? 'var(--pp-mint)' : 'var(--pp-coral)'
+  
+  return (
+    <div
+      className="pp-glass p-5 flex flex-col justify-between animate-slide-up relative overflow-hidden cursor-default col-span-2 min-h-[126px]"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      {/* Background glow */}
+      <div
+        className="absolute top-0 left-0 w-32 h-32 rounded-full blur-3xl opacity-20 pointer-events-none"
+        style={{ background: balanceColor, transform: 'translate(-20%, -20%)' }}
+        aria-hidden="true"
+      />
+      
+      <div className="relative z-10 flex flex-col h-full justify-between gap-3">
+        <div className="flex justify-between items-start">
+          <div>
+            <p className="text-pp-text-secondary text-xs font-medium mb-1">מאזן חודשי ({monthName})</p>
+            <p className="text-3xl font-display font-bold font-numeric" style={{ color: balanceColor }}>
+              {isPositive ? '+' : ''}₪{Number(balance).toLocaleString('he-IL', { maximumFractionDigits: 0 })}
+            </p>
+          </div>
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: `${balanceColor}18`, border: `1px solid ${balanceColor}30` }}
+            aria-hidden="true"
+          >
+            <Scale size={18} style={{ color: balanceColor }} />
+          </div>
+        </div>
+        
+        {/* Income / Expense details */}
+        <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-white/5 mt-auto">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-pp-mint" />
+            <div>
+              <p className="text-[10px] text-pp-text-muted">הכנסות</p>
+              <p className="text-xs font-bold text-white font-numeric">
+                +₪{Number(income).toLocaleString('he-IL', { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-pp-coral" />
+            <div>
+              <p className="text-[10px] text-pp-text-muted">הוצאות</p>
+              <p className="text-xs font-bold text-white font-numeric">
+                -₪{Number(expense).toLocaleString('he-IL', { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // Status badge helper
 const getStatusBadge = (daysRemaining) => {
@@ -89,6 +154,7 @@ const SkeletonCard = () => (
 const Dashboard = () => {
   const [subscriptions, setSubscriptions] = useState([])
   const [warranties, setWarranties] = useState([])
+  const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [userName, setUserName] = useState('דניאל')
 
@@ -137,6 +203,25 @@ const Dashboard = () => {
           startDate: s.start_date
         }))
         setSubscriptions(formatted)
+
+        try {
+          const today = new Date()
+          const currentYear = today.getFullYear()
+          const currentMonth = today.getMonth()
+          const fromDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`
+          const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate()
+          const toDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+
+          const { data: txData } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('user_id', user.id)
+            .gte('transaction_date', fromDate)
+            .lte('transaction_date', toDate)
+          setTransactions(txData || [])
+        } catch (err) {
+          console.error('Error fetching transactions in dashboard:', err)
+        }
       }
       setLoading(false)
     }
@@ -195,6 +280,15 @@ const Dashboard = () => {
   const totalActive = activeSubscriptions + warranties.filter(w => {
     const d = getDaysRemaining(w.expiry_date); return d === null || d >= 0
   }).length
+
+  // Monthly balance statistics
+  const monthlyIncome = transactions
+    .filter(t => t.type === 'income')
+    .reduce((sum, t) => sum + Number(t.amount), 0)
+  const monthlyExpense = transactions
+    .filter(t => t.type === 'expense')
+    .reduce((sum, t) => sum + Number(t.amount), 0)
+  const monthlyBalance = monthlyIncome - monthlyExpense
 
   // Upcoming items
   const upcomingWarranties = warranties
