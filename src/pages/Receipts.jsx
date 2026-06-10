@@ -32,6 +32,7 @@ const Receipts = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [previewReceipt, setPreviewReceipt] = useState(null)
+  const [fullscreenImage, setFullscreenImage] = useState(null)
   const [toast, setToast] = useState(null)
 
   // Upload form states
@@ -542,18 +543,28 @@ const Receipts = () => {
               </div>
 
               {/* Left Column: Scanned View / Image */}
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4 flex flex-col items-center justify-center min-h-[320px] relative overflow-hidden">
+              <div 
+                onClick={() => setFullscreenImage(previewReceipt.fileDataUrl || 'MOCK_SCANNED_RECEIPT')}
+                className="rounded-2xl border border-white/10 bg-black/20 p-4 flex flex-col items-center justify-center min-h-[320px] relative overflow-hidden group/scan cursor-zoom-in"
+                title="לחץ להגדלה"
+              >
+                {/* Click to zoom overlay hint */}
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/scan:opacity-100 transition-opacity duration-200 z-20 flex items-center justify-center gap-2 text-white font-bold text-sm">
+                  <Eye size={18} className="text-pp-cyan animate-pulse" />
+                  <span>לחץ להגדלה</span>
+                </div>
+
                 {previewReceipt.fileDataUrl && (previewReceipt.isImage || previewReceipt.fileDataUrl.startsWith('data:image/')) ? (
                   <div className="w-full h-full flex items-center justify-center max-h-[300px]">
                     <img 
                       src={previewReceipt.fileDataUrl} 
-                      className="max-w-full max-h-full object-contain rounded-lg border border-white/5 shadow-lg" 
+                      className="max-w-full max-h-full object-contain rounded-lg border border-white/5 shadow-lg group-hover/scan:scale-[1.02] transition-transform duration-300" 
                       alt="צילום קבלה מקורי" 
                     />
                   </div>
                 ) : (
                   /* Beautiful mock receipt scanned image placeholder if no real image exists */
-                  <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-pp-text-muted select-none">
+                  <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-pp-text-muted select-none group-hover/scan:scale-[1.02] transition-transform duration-300">
                     <div className="relative w-40 bg-white text-black p-4 shadow-2xl rounded-sm border border-gray-200 rotate-1 flex flex-col justify-between font-mono text-[9px] min-h-[220px] text-right">
                       {/* Thermal receipt header */}
                       <div className="border-b border-dashed border-gray-400 pb-2 mb-2 text-center" dir="rtl">
@@ -594,7 +605,14 @@ const Receipts = () => {
 
             </div>
 
-            <div className="flex gap-3 mt-6 justify-end">
+            <div className="flex gap-2.5 mt-6 justify-end flex-wrap">
+              <button
+                onClick={() => setFullscreenImage(previewReceipt.fileDataUrl || 'MOCK_SCANNED_RECEIPT')}
+                className="pp-btn-secondary cursor-pointer hover:bg-pp-cyan/10 hover:border-pp-cyan/20 text-pp-cyan flex items-center gap-2"
+              >
+                <Eye size={16} />
+                צפייה בגודל מלא
+              </button>
               <button
                 onClick={() => handleDownload(previewReceipt)}
                 className="pp-btn-primary cursor-pointer flex items-center gap-2"
@@ -611,12 +629,67 @@ const Receipts = () => {
               </button>
               <button
                 onClick={() => setPreviewReceipt(null)}
-                className="pp-btn-secondary cursor-pointer px-6"
+                className="pp-btn-secondary cursor-pointer px-6 animate-pulse"
               >
                 סגור
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Fullscreen Lightbox Overlay */}
+      {fullscreenImage && (
+        <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4" dir="rtl">
+          {/* Close Button */}
+          <button
+            onClick={() => setFullscreenImage(null)}
+            className="absolute top-6 left-6 p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-white transition-all cursor-pointer pp-focus"
+            aria-label="סגור תצוגה מלאה"
+          >
+            <X size={24} />
+          </button>
+
+          {/* Image Container */}
+          <div className="max-w-3xl max-h-[85vh] w-full flex items-center justify-center animate-zoom-in">
+            {fullscreenImage === 'MOCK_SCANNED_RECEIPT' ? (
+              /* Scanned simulated thermal ticket rendered larger! */
+              <div className="bg-white text-black p-8 shadow-2xl rounded-sm border border-gray-200 flex flex-col justify-between font-mono text-xs w-[320px] min-h-[440px] text-right scale-110">
+                <div className="border-b border-dashed border-gray-400 pb-3 mb-3 text-center">
+                  <p className="font-bold text-sm tracking-wider">{previewReceipt.storeName}</p>
+                  <p className="text-[9px] text-gray-500">חשבונית מס / קבלה</p>
+                  <p className="text-[9px] text-gray-500">תאריך: {previewReceipt.uploadDate}</p>
+                </div>
+                <div className="flex-1 space-y-2 mb-4">
+                  <div className="flex justify-between font-bold text-sm">
+                    <span>1x {previewReceipt.productName}</span>
+                    <span>{previewReceipt.price}</span>
+                  </div>
+                  <p className="text-[8px] text-gray-400 text-right">כולל מע"מ (17%)</p>
+                </div>
+                <div className="border-t border-dashed border-gray-400 pt-3 flex flex-col items-center gap-2 mt-auto">
+                  <div className="w-full h-12 flex gap-[1px] bg-black items-stretch justify-center px-4">
+                    {[1,3,1,2,4,1,2,3,1,4,2,1,3,1,2,2,1,3,1].map((w, idx) => (
+                      <div key={idx} className="bg-white" style={{ width: `${w * 2.5}px` }} />
+                    ))}
+                  </div>
+                  <p className="text-[8px] tracking-widest text-gray-600">RC-{previewReceipt.id}-99482</p>
+                  <p className="text-[10px] font-bold text-green-700">PAID & APPROVED</p>
+                </div>
+              </div>
+            ) : (
+              <img 
+                src={fullscreenImage} 
+                className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border border-white/10" 
+                alt="קבלה בגודל מלא" 
+              />
+            )}
+          </div>
+          
+          {/* Caption */}
+          <p className="text-pp-text-secondary text-sm mt-6 font-medium">
+            {previewReceipt.productName} • {previewReceipt.storeName} ({previewReceipt.price})
+          </p>
         </div>
       )}
 

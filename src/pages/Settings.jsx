@@ -72,7 +72,6 @@ export default function SettingsPage() {
           last_name: profile.last_name.trim(),
           mobile: profile.mobile.trim(),
           email: profile.email.trim(),
-          updated_at: new Date().toISOString(),
         })
 
       if (e) throw e

@@ -334,18 +334,41 @@ const Dashboard = () => {
 
       {/* ─── Bento Stats Grid ─── */}
       {loading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[0,1,2,3].map(i => <SkeletonCard key={i} />)}
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+          <div className="pp-glass p-5 flex flex-col justify-between col-span-2 h-[126px]">
+            <div>
+              <div className="pp-skeleton h-3 w-24 rounded mb-2" />
+              <div className="pp-skeleton h-8 w-28 rounded" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5 mt-auto">
+              <div>
+                <div className="pp-skeleton h-2 w-10 rounded mb-1" />
+                <div className="pp-skeleton h-3 w-16 rounded" />
+              </div>
+              <div>
+                <div className="pp-skeleton h-2 w-10 rounded mb-1" />
+                <div className="pp-skeleton h-3 w-16 rounded" />
+              </div>
+            </div>
+          </div>
+          {[0, 1, 2, 3].map(i => <SkeletonCard key={i} />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+          <BalanceCard
+            income={monthlyIncome}
+            expense={monthlyExpense}
+            balance={monthlyBalance}
+            monthName={HEBREW_MONTHS[new Date().getMonth()]}
+            delay={0}
+          />
           <StatCard
             icon={TrendingUp}
             label="פריטים פעילים"
             value={totalActive}
             sub="סה״כ במעקב"
             color="var(--pp-violet)"
-            delay={0}
+            delay={80}
           />
           <StatCard
             icon={CreditCard}
@@ -353,7 +376,7 @@ const Dashboard = () => {
             value={activeSubscriptions}
             sub="חודשי / שנתי"
             color="var(--pp-cyan)"
-            delay={80}
+            delay={160}
           />
           <StatCard
             icon={AlertCircle}
@@ -361,7 +384,7 @@ const Dashboard = () => {
             value={expiredSubscriptions + expiredWarranties}
             sub="פריטים פגי תוקף"
             color="var(--pp-coral)"
-            delay={160}
+            delay={240}
           />
           <StatCard
             icon={Bell}
@@ -369,7 +392,7 @@ const Dashboard = () => {
             value={totalAlerts}
             sub="ב-30 הימים הקרובים"
             color="var(--pp-amber)"
-            delay={240}
+            delay={320}
           />
         </div>
       )}
