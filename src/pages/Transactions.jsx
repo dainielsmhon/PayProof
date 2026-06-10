@@ -373,10 +373,17 @@ const ParsingLoader = ({ onClose }) => {
     const timer = setInterval(() => {
       setProgress(p => {
         if (p >= 95) return p
-        const diff = Math.max(1, (95 - p) * 0.08)
+        let diff = 0.1
+        if (p < 50) {
+          diff = 1.8
+        } else if (p < 75) {
+          diff = 1.0
+        } else if (p < 90) {
+          diff = 0.5
+        }
         return Math.min(95, p + diff)
       })
-    }, 150)
+    }, 300)
     return () => clearInterval(timer)
   }, [])
 
